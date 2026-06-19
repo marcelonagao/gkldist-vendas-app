@@ -271,10 +271,12 @@ export default function App() {
   );
 
   const renderCatalog = () => {
-    const filteredProducts = dbProducts.filter(p => 
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      p.category.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    // Garante que a pesquisa é segura mesmo se algum campo de nome ou categoria estiver ausente do Firebase
+    const filteredProducts = dbProducts.filter(p => {
+      const nameMatch = p.name ? p.name.toLowerCase().includes(searchQuery.toLowerCase()) : false;
+      const categoryMatch = p.category ? p.category.toLowerCase().includes(searchQuery.toLowerCase()) : false;
+      return nameMatch || categoryMatch;
+    });
 
     return (
       <div className="pb-24">
@@ -298,9 +300,12 @@ export default function App() {
               <div key={product.id} className="bg-white rounded-2xl shadow-sm overflow-hidden flex flex-col border border-[#E8F3F2] hover:shadow-md transition hover:border-[#8ECAC5]/50">
                 <div className="h-48 overflow-hidden bg-[#F4F9F8] relative">
                   <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
-                  <span className="absolute top-3 right-3 bg-white/90 text-[#4A6B64] text-xs font-semibold px-3 py-1 rounded-full shadow-sm">
-                    {product.category}
-                  </span>
+                  {/* Só exibe o distintivo (badge) se a categoria existir na base de dados para evitar elementos vazios */}
+                  {product.category && (
+                    <span className="absolute top-3 right-3 bg-white/90 text-[#4A6B64] text-xs font-semibold px-3 py-1 rounded-full shadow-sm">
+                      {product.category}
+                    </span>
+                  )}
                 </div>
                 <div className="p-4 flex-1 flex flex-col">
                   <h3 className="text-lg font-bold text-[#4A6B64]">{product.name}</h3>
