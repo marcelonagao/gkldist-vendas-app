@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 // --- IMPORTAÇÕES DO FIREBASE ---
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, addDoc } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc } from 'firebase/firestore';
 
 // --- DECLARAÇÕES DO TYPESCRIPT ---
 declare const __firebase_config: string | undefined;
@@ -105,6 +105,12 @@ const AlertCircleIcon = ({ size = 24, className = "" }: { size?: number; classNa
   </svg>
 );
 
+const ShieldIcon = ({ size = 24, className = "" }: { size?: number; className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+  </svg>
+);
+
 // ============================================================================
 // CONFIGURAÇÕES DO FIREBASE
 // ============================================================================
@@ -135,7 +141,8 @@ const PRODUCTS_FALLBACK = [
 
 const MOCK_USERS = {
   b2b_approved: { id: 'u2', name: 'Lojista Beta (Antigo)', isB2B: true, creditLimit: 5000.00, status: 'aprovado' },
-  b2b_novato: { id: 'u3', name: 'Nova Loja (Novo)', isB2B: true, creditLimit: 0.00, status: 'novato' }
+  b2b_novato: { id: 'u3', name: 'Nova Loja (Novo)', isB2B: true, creditLimit: 0.00, status: 'pendente' },
+  admin: { id: 'admin', name: 'Gestor GKL', isAdmin: true }
 };
 
 // --- FUNÇÃO AUXILIAR: TRADUZ E ADAPTA CAMPOS DO PORTUGUÊS E CORRIGE VÍRGULAS ---
@@ -189,7 +196,7 @@ const formatPrice = (value: any): string => {
 };
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState('login');
+  const [currentScreen, setCurrentScreen] = useState('login'); // login, catalog, cart, checkout, success, orders, admin
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [cart, setCart] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -201,11 +208,14 @@ export default function App() {
   const [activeAuthTab, setActiveAuthTab] = useState<'login' | 'register'>('login');
   const [authEmail, setAuthFormEmail] = useState('');
   const [authPassword, setAuthFormPassword] = useState('');
-  const [authName, setAuthFormName] = useState(''); // Razão Social
-  const [authNIF, setAuthFormNif] = useState('');   // CNPJ
+  const [authName, setAuthFormName] = useState(''); 
+  const [authNIF, setAuthFormNif] = useState('');   
 
   const [firebaseUser, setFirebaseUser] = useState<any>(null);
   const [dbProducts, setDbProducts] = useState<any[]>([]);
+  
+  // NOVO: Estado para armazenar os clientes registados no Firebase
+  const [dbClients, setDbClients] = useState<any[]>([]);
 
   useEffect(() => {
     if (!isFirebaseConfigured) {
@@ -257,6 +267,34 @@ export default function App() {
     return () => unsubscribe();
   }, [firebaseUser]);
 
+  // NOVO: Lê a coleção de Clientes do Firebase em tempo real
+  useEffect(() => {
+    if (!isFirebaseConfigured || !firebaseUser) return;
+    
+    const clientsPath = typeof __app_id !== 'undefined' 
+      ? collection(db, 'artifacts', appId, 'public', 'data', 'clientes')
+      : collection(db, 'clientes'); 
+      
+    const unsubscribe = onSnapshot(clientsPath, (snapshot) => {
+      const fetchedClients = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setDbClients(fetchedClients);
+    }, (error) => {
+      console.error("Aviso do Firestore (clientes):", error);
+    });
+    
+    return () => unsubscribe();
+  }, [firebaseUser]);
+
+  // NOVO: Mantém o currentUser sempre atualizado com os dados do Firebase (útil quando o Admin aprova o limite)
+  useEffect(() => {
+    if (currentUser && !currentUser.isAdmin && currentUser.id.startsWith('db_')) {
+      const updatedUser = dbClients.find(c => c.id === currentUser.id);
+      if (updatedUser && (updatedUser.status !== currentUser.status || updatedUser.creditLimit !== currentUser.creditLimit)) {
+        setCurrentUser(updatedUser);
+      }
+    }
+  }, [dbClients, currentUser]);
+
   useEffect(() => {
     if (!isFirebaseConfigured || !firebaseUser) return;
 
@@ -299,48 +337,80 @@ export default function App() {
   const cartTotal = cart.reduce((sum, item) => sum + (Number(item.price || 0) * item.quantity), 0);
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  const handleLogin = (userType: 'b2b_approved' | 'b2b_novato') => {
+  const handleLogin = (userType: 'b2b_approved' | 'b2b_novato' | 'admin') => {
     setCurrentUser(MOCK_USERS[userType]);
-    setCurrentScreen('catalog');
+    if (userType === 'admin') {
+      setCurrentScreen('admin');
+    } else {
+      setCurrentScreen('catalog');
+    }
   };
 
-  const handleAuthSubmit = (e: React.FormEvent) => {
+  const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (activeAuthTab === 'register') {
       if (!authName || !authEmail || !authPassword || !authNIF) {
         alert("Por favor, preencha todos os campos para efetuar o registo.");
         return;
       }
-      // NOVO FLUXO: Cliente novato entra com zero crédito até cumprir meta.
+      
       const newUser = {
-        id: 'u_' + Math.random().toString(36).substring(2, 9),
         name: authName,
         email: authEmail,
         isB2B: true, 
         creditLimit: 0.00,
-        status: 'novato',
-        nif: authNIF
+        status: 'pendente',
+        nif: authNIF,
+        dataCriacao: new Date().toISOString()
       };
-      setCurrentUser(newUser);
-      alert(`Cadastro criado com sucesso! Faça 3 compras à vista para desbloquear o Boleto Faturado.`);
-      setCurrentScreen('catalog');
+
+      if (isFirebaseConfigured && firebaseUser) {
+        try {
+          const clientsPath = typeof __app_id !== 'undefined' 
+            ? collection(db, 'artifacts', appId, 'public', 'data', 'clientes')
+            : collection(db, 'clientes');
+          
+          const docRef = await addDoc(clientsPath, newUser);
+          setCurrentUser({ id: `db_${docRef.id}`, ...newUser });
+          alert(`Cadastro criado com sucesso! Faça 3 compras à vista para desbloquear o Boleto Faturado ou aguarde aprovação.`);
+          setCurrentScreen('catalog');
+        } catch (error) {
+          console.error("Erro ao registrar cliente no Firebase:", error);
+          alert("Erro ao criar cadastro. Tente novamente.");
+        }
+      } else {
+        // Fallback local
+        setCurrentUser({ id: 'u_local', ...newUser });
+        alert(`Cadastro criado (Localmente).`);
+        setCurrentScreen('catalog');
+      }
+
     } else {
       if (!authEmail || !authPassword) {
         alert("Por favor, introduza o seu Email e Palavra-passe.");
         return;
       }
-      // Simulação para o preview
-      const isNovato = authEmail.includes('novo');
-      const loggedUser = {
-        id: 'u_logged',
-        name: isNovato ? 'Loja Nova (Sem histórico)' : 'Lojista Aprovado',
-        email: authEmail,
-        isB2B: true,
-        creditLimit: isNovato ? 0.00 : 5000.00,
-        status: isNovato ? 'novato' : 'aprovado'
-      };
-      setCurrentUser(loggedUser);
-      setCurrentScreen('catalog');
+
+      // Procura o utilizador real na coleção de clientes do Firebase
+      const foundClient = dbClients.find(c => c.email.toLowerCase() === authEmail.toLowerCase());
+      
+      if (foundClient) {
+        setCurrentUser({ id: `db_${foundClient.id}`, ...foundClient });
+        setCurrentScreen('catalog');
+      } else {
+        // Fallback para os acessos rápidos simulados
+        const isNovato = authEmail.includes('novo');
+        const loggedUser = {
+          id: 'u_logged',
+          name: isNovato ? 'Loja Nova (Sem histórico)' : 'Lojista Aprovado',
+          email: authEmail,
+          isB2B: true,
+          creditLimit: isNovato ? 0.00 : 5000.00,
+          status: isNovato ? 'pendente' : 'aprovado'
+        };
+        setCurrentUser(loggedUser);
+        setCurrentScreen('catalog');
+      }
     }
   };
 
@@ -390,6 +460,28 @@ export default function App() {
     } catch (error) {
       console.error("Erro ao guardar pedido:", error);
       alert("Erro ao finalizar pedido. Verifique as configurações do Firebase.");
+    }
+  };
+
+  // NOVO: Função para o Admin aprovar o crédito de um cliente no Firebase
+  const handleApproveCredit = async (clientId: string) => {
+    if (!isFirebaseConfigured) {
+      alert("Simulação: Cliente aprovado localmente.");
+      return;
+    }
+    try {
+      const clientDocRef = typeof __app_id !== 'undefined'
+        ? doc(db, 'artifacts', appId, 'public', 'data', 'clientes', clientId)
+        : doc(db, 'clientes', clientId);
+
+      await updateDoc(clientDocRef, {
+        status: 'aprovado',
+        creditLimit: 5000.00
+      });
+      alert("Crédito de R$ 5.000,00 aprovado e libertado com sucesso!");
+    } catch (error) {
+      console.error("Erro ao aprovar crédito:", error);
+      alert("Erro ao aprovar cliente. Verifique as permissões.");
     }
   };
 
@@ -513,6 +605,13 @@ export default function App() {
           >
             <AlertCircleIcon size={14} /> Entrar como Loja Nova (Progresso 0/3)
           </button>
+
+          <button
+            onClick={() => handleLogin('admin')}
+            className="w-full flex items-center justify-center gap-1.5 bg-gray-800 hover:bg-gray-900 text-white py-2.5 px-4 rounded-xl text-xs font-bold border border-gray-700 transition mt-2 shadow-sm"
+          >
+            <ShieldIcon size={14} /> Acesso Painel Gestor (Aprovar Clientes)
+          </button>
         </div>
       </div>
     </div>
@@ -529,20 +628,17 @@ export default function App() {
       return textMatch && categoryFilterMatch;
     });
 
-    // LÓGICA DE PROGRESSÃO E GAMIFICAÇÃO
     const targetOrders = 3;
     const currentOrders = myOrders.length;
     const remainingOrders = Math.max(0, targetOrders - currentOrders);
     const progressPercent = Math.min(100, (currentOrders / targetOrders) * 100);
     const hasReachedTarget = currentOrders >= targetOrders;
-    
-    // Verifica se já tem limite (aprovado)
     const isApproved = currentUser?.creditLimit > 0;
 
     return (
       <div className="pb-24">
         {/* Barra de Progresso Inteligente (Apenas para lojistas sem crédito) */}
-        {!isApproved && currentUser && (
+        {!isApproved && currentUser && !currentUser.isAdmin && (
           <div className={`p-4 border-b ${hasReachedTarget ? 'bg-[#E8F3F2] border-[#8ECAC5]' : 'bg-yellow-50 border-yellow-200'}`}>
             <div className="max-w-6xl mx-auto">
               <div className="flex items-center gap-3 mb-2">
@@ -709,8 +805,6 @@ export default function App() {
   const renderCheckout = () => {
     const isApproved = currentUser?.creditLimit > 0;
     const canUseCredit = currentUser?.isB2B && isApproved && currentUser.creditLimit >= cartTotal;
-    
-    // Lógica para mensagem de bloqueio
     const currentOrders = myOrders.length;
     const hasReachedTarget = currentOrders >= 3;
 
@@ -870,7 +964,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Itens do Pedido */}
               <div className="space-y-2 mb-4">
                 {order.itens && Array.isArray(order.itens) ? order.itens.map((item: any, idx: number) => (
                   <div key={idx} className="flex justify-between text-sm text-[#4A6B64]">
@@ -897,48 +990,142 @@ export default function App() {
     </div>
   );
 
+  // NOVO: Renderiza o Painel Administrativo de Gestão de Clientes
+  const renderAdmin = () => {
+    // Separa os clientes pendentes dos aprovados
+    const pendingClients = dbClients.filter(c => c.status === 'pendente');
+    const approvedClients = dbClients.filter(c => c.status === 'aprovado' || c.creditLimit > 0);
+
+    return (
+      <div className="max-w-5xl mx-auto px-4 py-8 pb-24">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h2 className="text-3xl font-extrabold text-[#4A6B64] flex items-center gap-3">
+              <ShieldIcon size={32} />
+              Painel de Gestão GKL
+            </h2>
+            <p className="text-[#698F8A] mt-1">Gerencie solicitações de crédito e clientes B2B.</p>
+          </div>
+        </div>
+
+        {dbClients.length === 0 ? (
+          <div className="bg-white p-8 rounded-2xl shadow-sm text-center border border-[#E8F3F2]">
+            <p className="text-[#698F8A]">Nenhum cliente cadastrado no Firebase ainda.</p>
+            <p className="text-sm mt-2 text-[#4A6B64]">Dica: Crie uma conta na tela de login para ver os dados aparecerem aqui.</p>
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {/* Secção de Clientes Pendentes (Prioridade) */}
+            <div>
+              <h3 className="text-xl font-bold text-yellow-700 mb-4 flex items-center gap-2">
+                <AlertCircleIcon size={24} /> 
+                Aguardando Aprovação Financeira ({pendingClients.length})
+              </h3>
+              
+              {pendingClients.length === 0 ? (
+                <div className="bg-yellow-50 p-6 rounded-2xl border border-yellow-100 text-yellow-700 text-sm font-semibold">
+                  Tudo limpo! Não há nenhuma solicitação pendente no momento.
+                </div>
+              ) : (
+                <div className="grid gap-4">
+                  {pendingClients.map(client => (
+                    <div key={client.id} className="bg-white p-6 rounded-2xl shadow-sm border-l-4 border-yellow-400 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div>
+                        <h4 className="font-bold text-lg text-[#4A6B64]">{client.name}</h4>
+                        <div className="flex gap-4 mt-1 text-sm text-[#698F8A]">
+                          <span><strong>CNPJ:</strong> {client.nif}</span>
+                          <span><strong>Email:</strong> {client.email}</span>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => handleApproveCredit(client.id)}
+                        className="bg-[#8ECAC5] hover:bg-[#7ABDB8] text-white px-6 py-3 rounded-xl font-bold shadow-md transition-all active:scale-95"
+                      >
+                        Aprovar R$ 5.000,00
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Secção de Clientes Aprovados */}
+            <div>
+              <h3 className="text-xl font-bold text-[#4A6B64] mb-4 flex items-center gap-2">
+                <CheckCircleIcon size={24} /> 
+                Lojistas Aprovados ({approvedClients.length})
+              </h3>
+              <div className="grid gap-4">
+                {approvedClients.map(client => (
+                  <div key={client.id} className="bg-white p-4 rounded-xl shadow-sm border border-[#E8F3F2] flex justify-between items-center opacity-80">
+                    <div>
+                      <h4 className="font-bold text-[#4A6B64]">{client.name}</h4>
+                      <span className="text-xs text-[#698F8A]">CNPJ: {client.nif}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs text-[#698F8A] block">Limite Aprovado</span>
+                      <span className="font-bold text-[#8ECAC5]">R$ {formatPrice(client.creditLimit)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-[#F4F9F8] font-sans relative">
       {currentUser && currentScreen !== 'login' && (
         <header className="bg-white border-b border-[#8ECAC5]/30 text-[#4A6B64] p-4 sticky top-0 z-20 shadow-sm">
           <div className="max-w-6xl mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-2" onClick={() => setCurrentScreen('catalog')} style={{cursor: 'pointer'}}>
+            <div className="flex items-center gap-2" onClick={() => !currentUser.isAdmin && setCurrentScreen('catalog')} style={{cursor: currentUser.isAdmin ? 'default' : 'pointer'}}>
               <SparklesIcon size={24} className="text-[#8ECAC5]" />
               <div className="flex flex-col">
                 <span className="font-bold text-lg leading-tight hidden sm:block text-[#8ECAC5]">GKL BRASIL</span>
-                <span className="text-[10px] font-bold tracking-wider uppercase text-[#698F8A] leading-none hidden sm:block">Distribuidora</span>
+                <span className="text-[10px] font-bold tracking-wider uppercase text-[#698F8A] leading-none hidden sm:block">
+                  {currentUser.isAdmin ? 'Painel Administrativo' : 'Distribuidora'}
+                </span>
               </div>
             </div>
             
             <div className="flex items-center gap-6">
               <div className="text-sm text-right hidden sm:block text-[#698F8A]">
                 Olá, <span className="font-bold text-[#4A6B64]">{currentUser.name}</span>
-                {currentUser.isB2B && (
+                {currentUser.isAdmin ? (
+                  <div className="text-xs font-semibold text-gray-500">Acesso Nível Gestão</div>
+                ) : currentUser.isB2B && (
                   <div className="text-xs font-semibold text-[#8ECAC5]">
                     {currentUser.creditLimit > 0 ? `Limite: R$ ${formatPrice(currentUser.creditLimit)}` : (myOrders.length >= 3 ? 'Conta em Análise' : `Compras: ${myOrders.length}/3`)}
                   </div>
                 )}
               </div>
 
-              <button 
-                onClick={() => setCurrentScreen('orders')}
-                className={`p-2 rounded-full transition ${currentScreen === 'orders' ? 'bg-[#E8F3F2] text-[#4A6B64]' : 'hover:bg-[#E8F3F2] text-[#698F8A]'}`}
-                title="Meus Pedidos"
-              >
-                <ClipboardIcon size={22} />
-              </button>
-              
-              <button 
-                onClick={() => setCurrentScreen('cart')}
-                className="relative p-2 hover:bg-[#E8F3F2] rounded-full transition text-[#4A6B64]"
-              >
-                <ShoppingCartIcon size={24} />
-                {cartItemCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-[#8ECAC5] text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full shadow-sm">
-                    {cartItemCount}
-                  </span>
-                )}
-              </button>
+              {!currentUser.isAdmin && (
+                <>
+                  <button 
+                    onClick={() => setCurrentScreen('orders')}
+                    className={`p-2 rounded-full transition ${currentScreen === 'orders' ? 'bg-[#E8F3F2] text-[#4A6B64]' : 'hover:bg-[#E8F3F2] text-[#698F8A]'}`}
+                    title="Meus Pedidos"
+                  >
+                    <ClipboardIcon size={22} />
+                  </button>
+                  
+                  <button 
+                    onClick={() => setCurrentScreen('cart')}
+                    className="relative p-2 hover:bg-[#E8F3F2] rounded-full transition text-[#4A6B64]"
+                  >
+                    <ShoppingCartIcon size={24} />
+                    {cartItemCount > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-[#8ECAC5] text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full shadow-sm">
+                        {cartItemCount}
+                      </span>
+                    )}
+                  </button>
+                </>
+              )}
 
               <button onClick={handleLogout} className="text-[#698F8A] hover:text-[#4A6B64] transition" title="Sair">
                 <LogOutIcon size={24} />
@@ -954,6 +1141,7 @@ export default function App() {
       {currentScreen === 'checkout' && renderCheckout()}
       {currentScreen === 'success' && renderSuccess()}
       {currentScreen === 'orders' && renderOrders()}
+      {currentScreen === 'admin' && renderAdmin()}
 
       {/* Modal Flutuante */}
       {selectedProduct && (
