@@ -10,7 +10,7 @@ declare const __firebase_config: string | undefined;
 declare const __initial_auth_token: string | undefined;
 declare const __app_id: string | undefined;
 
-// --- COMPONENTES NATIVOS DE ÍCONES EM SVG (Evitam erros com o Lucide no StackBlitz) ---
+// --- COMPONENTES NATIVOS DE ÍCONES EM SVG ---
 const ShoppingCartIcon = ({ size = 24, className = "" }: { size?: number; className?: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <circle cx="8" cy="21" r="1" /><circle cx="19" cy="21" r="1" />
@@ -123,13 +123,9 @@ const PRODUCTS_FALLBACK = [
   { id: 1, name: 'Creme Desodorante Herbíssimo', category: 'Cuidados Pessoais', price: 5.90, stock: 150, image: 'https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?auto=format&fit=crop&q=80&w=400' },
   { id: 2, name: 'Carmed Fini Dentaduras', category: 'Lábios', price: 24.90, stock: 85, image: 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?auto=format&fit=crop&q=80&w=400' },
   { id: 3, name: 'Loção Bubbaloo Tutti Frutti', category: 'Corpo e Banho', price: 49.90, stock: 40, image: 'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&q=80&w=400' },
-  { id: 4, name: 'Body Splash La Belle', category: 'Perfumaria', price: 35.00, stock: 60, image: 'https://images.unsplash.com/photo-1594498653385-d5172c532c00?auto=format&fit=crop&q=80&w=400' },
-  { id: 5, name: 'Esmalte Face Beautiful', category: 'Unhas', price: 4.50, stock: 200, image: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&q=80&w=400' },
-  { id: 6, name: 'Kit Lixa de Unha (100 un)', category: 'Acessórios', price: 15.00, stock: 30, image: 'https://images.unsplash.com/photo-1522337660859-02fbefca4702?auto=format&fit=crop&q=80&w=400' },
 ];
 
 const MOCK_USERS = {
-  normal: { id: 'u1', name: 'João Silva', isB2B: false, creditLimit: 0 },
   b2b: { id: 'u2', name: 'Lojista Beta', isB2B: true, creditLimit: 5000.00 }
 };
 
@@ -184,28 +180,21 @@ const formatPrice = (value: any): string => {
 };
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState('login'); // login, catalog, cart, checkout, success, orders
+  const [currentScreen, setCurrentScreen] = useState('login');
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [cart, setCart] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-
-  // Opção 1: Filtro de Categoria Selecionada
   const [selectedCategory, setSelectedCategory] = useState('Todas');
-
-  // Opção 2: Ecrã de Detalhes do Produto (Modal)
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [modalQuantity, setModalQuantity] = useState(1);
-
-  // Opção 3: Estado de Histórico de Pedidos
   const [myOrders, setMyOrders] = useState<any[]>([]);
 
-  // Opção 4: Estado do Formulário de Registo e Login Real
+  // Opção 4: Estado do Formulário focado 100% no B2B (Lojistas)
   const [activeAuthTab, setActiveAuthTab] = useState<'login' | 'register'>('login');
   const [authEmail, setAuthFormEmail] = useState('');
   const [authPassword, setAuthFormPassword] = useState('');
-  const [authName, setAuthFormName] = useState('');
-  const [authNIF, setAuthFormNif] = useState('');
-  const [authClientType, setAuthFormClientType] = useState<'normal' | 'b2b'>('normal');
+  const [authName, setAuthFormName] = useState(''); // Agora será Razão Social
+  const [authNIF, setAuthFormNif] = useState('');   // Agora será CNPJ
 
   const [firebaseUser, setFirebaseUser] = useState<any>(null);
   const [dbProducts, setDbProducts] = useState<any[]>([]);
@@ -242,7 +231,6 @@ export default function App() {
   useEffect(() => {
     if (!isFirebaseConfigured || !firebaseUser) return;
     
-    // Leitura do catálogo de produtos em tempo real
     const path = typeof __app_id !== 'undefined' 
       ? collection(db, 'artifacts', appId, 'public', 'data', 'produtos')
       : collection(db, 'produtos'); 
@@ -261,7 +249,6 @@ export default function App() {
     return () => unsubscribe();
   }, [firebaseUser]);
 
-  // Opção 3: Escuta ativa de pedidos em tempo real no Firebase
   useEffect(() => {
     if (!isFirebaseConfigured || !firebaseUser) return;
 
@@ -274,7 +261,6 @@ export default function App() {
         id: doc.id,
         ...doc.data()
       }));
-      // Ordena por data decrescente (pedidos recentes primeiro)
       fetchedOrders.sort((a: any, b: any) => {
         return new Date(b.dataCriacao || 0).getTime() - new Date(a.dataCriacao || 0).getTime();
       });
@@ -286,7 +272,6 @@ export default function App() {
     return () => unsubscribe();
   }, [firebaseUser]);
 
-  // Lógica de adição ao carrinho
   const addToCart = (product: any, quantity = 1) => {
     setCart((prevCart) => {
       const existingItem = prevCart.find(item => item.id === product.id);
@@ -306,13 +291,12 @@ export default function App() {
   const cartTotal = cart.reduce((sum, item) => sum + (Number(item.price || 0) * item.quantity), 0);
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  // Função auxiliar de login rápido (Acesso Rápido)
-  const handleLogin = (userType: 'normal' | 'b2b') => {
+  const handleLogin = (userType: 'b2b') => {
     setCurrentUser(MOCK_USERS[userType]);
     setCurrentScreen('catalog');
   };
 
-  // Opção 4: Registo e Autenticação de Utilizadores
+  // Registo totalmente focado em B2B (Lojistas)
   const handleAuthSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (activeAuthTab === 'register') {
@@ -320,32 +304,28 @@ export default function App() {
         alert("Por favor, preencha todos os campos para efetuar o registo.");
         return;
       }
-      // Registo Real Simulado (atualizando o estado do currentUser com os dados fornecidos)
       const newUser = {
         id: 'u_' + Math.random().toString(36).substring(2, 9),
-        name: authName,
+        name: authName, // Razão Social
         email: authEmail,
-        isB2B: authClientType === 'b2b',
-        creditLimit: authClientType === 'b2b' ? 5000.00 : 0,
-        nif: authNIF
+        isB2B: true, // Forçado para true nesta fase
+        creditLimit: 5000.00, // Limite aprovado simulado para testes
+        nif: authNIF // CNPJ
       };
       setCurrentUser(newUser);
-      alert(`Conta criada com sucesso! Bem-vindo(a) à GKL, ${authName}.`);
+      alert(`Cadastro B2B criado com sucesso! Bem-vindo(a) à GKL, ${authName}.`);
       setCurrentScreen('catalog');
     } else {
-      // Login Simulado
       if (!authEmail || !authPassword) {
         alert("Por favor, introduza o seu Email e Palavra-passe.");
         return;
       }
-      // Verifica se é lojista ou cliente padrão baseado nas credenciais ou simulação
-      const isB2BUser = authEmail.includes('lojista') || authEmail.includes('b2b');
       const loggedUser = {
         id: 'u_logged',
-        name: isB2BUser ? 'Distribuidora Alpha' : 'João Silva',
+        name: 'Lojista Registrado',
         email: authEmail,
-        isB2B: isB2BUser,
-        creditLimit: isB2BUser ? 5000.00 : 0
+        isB2B: true,
+        creditLimit: 5000.00
       };
       setCurrentUser(loggedUser);
       setCurrentScreen('catalog');
@@ -406,7 +386,6 @@ export default function App() {
     setModalQuantity(1);
   };
 
-  // Opção 4: Interface Visual do Registo / Login
   const renderLogin = () => (
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#F4F9F8] p-6">
       <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md border border-[#8ECAC5]/25">
@@ -415,7 +394,8 @@ export default function App() {
             <SparklesIcon size={32} />
           </div>
           <h1 className="text-3xl font-extrabold text-[#8ECAC5] tracking-wide">GKL BRASIL</h1>
-          <p className="text-[#698F8A] font-bold tracking-widest uppercase text-xs">Distribuidora</p>
+          <p className="text-[#698F8A] font-bold tracking-widest uppercase text-xs mb-1">Distribuidora</p>
+          <p className="text-[#8ECAC5] text-sm font-semibold bg-[#E8F3F2] inline-block px-3 py-1 rounded-full">Acesso Exclusivo B2B</p>
         </div>
 
         {/* Separador de Abas de Autenticação */}
@@ -438,7 +418,7 @@ export default function App() {
                 : 'text-[#698F8A] hover:text-[#4A6B64]'
             }`}
           >
-            Criar Conta
+            Criar Cadastro CNPJ
           </button>
         </div>
 
@@ -446,10 +426,10 @@ export default function App() {
           {activeAuthTab === 'register' && (
             <>
               <div>
-                <label className="block text-xs font-bold text-[#4A6B64] uppercase mb-1">Nome Completo / Razão Social</label>
+                <label className="block text-xs font-bold text-[#4A6B64] uppercase mb-1">Razão Social / Nome Fantasia</label>
                 <input
                   type="text"
-                  placeholder="Seu nome ou nome da empresa"
+                  placeholder="Nome da sua loja ou empresa"
                   value={authName}
                   onChange={(e) => setAuthFormName(e.target.value)}
                   className="w-full bg-[#F4F9F8] text-[#4A6B64] border border-[#E8F3F2] rounded-xl py-3 px-4 outline-none focus:ring-2 focus:ring-[#8ECAC5] transition"
@@ -458,52 +438,24 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#4A6B64] uppercase mb-1">CNPJ / CPF / NIF</label>
+                <label className="block text-xs font-bold text-[#4A6B64] uppercase mb-1">CNPJ</label>
                 <input
                   type="text"
-                  placeholder="Introduza o número de identificação"
+                  placeholder="00.000.000/0000-00"
                   value={authNIF}
                   onChange={(e) => setAuthFormNif(e.target.value)}
                   className="w-full bg-[#F4F9F8] text-[#4A6B64] border border-[#E8F3F2] rounded-xl py-3 px-4 outline-none focus:ring-2 focus:ring-[#8ECAC5] transition"
                   required
                 />
               </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#4A6B64] uppercase mb-1">Perfil do Cliente</label>
-                <div className="grid grid-cols-2 gap-3 mt-1">
-                  <button
-                    type="button"
-                    onClick={() => setAuthFormClientType('normal')}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all ${
-                      authClientType === 'normal'
-                        ? 'border-[#4A6B64] bg-[#E8F3F2] text-[#4A6B64]'
-                        : 'border-[#E8F3F2] text-[#698F8A] bg-white'
-                    }`}
-                  >
-                    Cliente Padrão
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAuthFormClientType('b2b')}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all ${
-                      authClientType === 'b2b'
-                        ? 'border-[#8ECAC5] bg-[#F4F9F8] text-[#4A6B64]'
-                        : 'border-[#E8F3F2] text-[#698F8A] bg-white'
-                    }`}
-                  >
-                    Lojista B2B (Faturado)
-                  </button>
-                </div>
-              </div>
             </>
           )}
 
           <div>
-            <label className="block text-xs font-bold text-[#4A6B64] uppercase mb-1">Endereço de Email</label>
+            <label className="block text-xs font-bold text-[#4A6B64] uppercase mb-1">Endereço de Email (Comercial)</label>
             <input
               type="email"
-              placeholder="exemplo@gkl.com"
+              placeholder="contato@sualoja.com"
               value={authEmail}
               onChange={(e) => setAuthFormEmail(e.target.value)}
               className="w-full bg-[#F4F9F8] text-[#4A6B64] border border-[#E8F3F2] rounded-xl py-3 px-4 outline-none focus:ring-2 focus:ring-[#8ECAC5] transition"
@@ -527,30 +479,22 @@ export default function App() {
             type="submit"
             className="w-full bg-[#4A6B64] hover:bg-[#3A5A53] text-white py-3.5 rounded-xl font-bold transition shadow-md mt-4 active:scale-95"
           >
-            {activeAuthTab === 'register' ? 'Efetuar Registo' : 'Iniciar Sessão'}
+            {activeAuthTab === 'register' ? 'Solicitar Cadastro' : 'Acessar Catálogo'}
           </button>
         </form>
 
         <div className="relative my-6">
           <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-[#E8F3F2]"></div></div>
-          <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-3 text-[#698F8A] font-bold">Ou Acesso Rápido</span></div>
+          <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-3 text-[#698F8A] font-bold">Acesso para Testes</span></div>
         </div>
 
-        {/* Links rápidos originais para testes */}
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            onClick={() => handleLogin('normal')}
-            className="flex items-center justify-center gap-1.5 bg-[#E8F3F2] hover:bg-[#D4EAE7] text-[#4A6B64] py-2.5 px-2 rounded-xl text-xs font-bold transition"
-          >
-            <UserIcon size={14} /> Cliente Teste
-          </button>
-          <button
-            onClick={() => handleLogin('b2b')}
-            className="flex items-center justify-center gap-1.5 bg-[#F4F9F8] hover:bg-[#E8F3F2] text-[#8ECAC5] py-2.5 px-2 rounded-xl text-xs font-bold border border-[#8ECAC5]/30 transition"
-          >
-            <FileTextIcon size={14} /> Lojista Teste
-          </button>
-        </div>
+        {/* Link rápido B2B para testes */}
+        <button
+          onClick={() => handleLogin('b2b')}
+          className="w-full flex items-center justify-center gap-1.5 bg-[#F4F9F8] hover:bg-[#E8F3F2] text-[#8ECAC5] py-3 px-4 rounded-xl text-sm font-bold border border-[#8ECAC5]/30 transition"
+        >
+          <FileTextIcon size={16} /> Entrar com Lojista de Teste (Faturado)
+        </button>
       </div>
     </div>
   );
@@ -807,7 +751,6 @@ export default function App() {
     </div>
   );
 
-  // Opção 3: Ecrã de Histórico de Pedidos Realizados ("Meus Pedidos")
   const renderOrders = () => (
     <div className="max-w-4xl mx-auto px-4 py-8 pb-24">
       <div className="flex items-center gap-4 mb-6">
@@ -903,7 +846,6 @@ export default function App() {
                 {currentUser.isB2B && <div className="text-xs font-semibold text-[#8ECAC5]">Limite: R$ {formatPrice(currentUser.creditLimit)}</div>}
               </div>
 
-              {/* Botão de Histórico de Pedidos (Opção 3) */}
               <button 
                 onClick={() => setCurrentScreen('orders')}
                 className={`p-2 rounded-full transition ${currentScreen === 'orders' ? 'bg-[#E8F3F2] text-[#4A6B64]' : 'hover:bg-[#E8F3F2] text-[#698F8A]'}`}
@@ -943,7 +885,6 @@ export default function App() {
       {selectedProduct && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300">
           <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto md:overflow-hidden shadow-2xl relative animate-in fade-in zoom-in-95 duration-200 flex flex-col md:flex-row border border-[#8ECAC5]/10">
-            {/* Botão de Fechar */}
             <button 
               onClick={() => setSelectedProduct(null)}
               className="absolute top-4 right-4 bg-white/80 p-2 rounded-full text-[#4A6B64] hover:bg-[#E8F3F2] transition z-10 shadow-sm"
@@ -951,7 +892,6 @@ export default function App() {
               <CloseIcon size={20} />
             </button>
 
-            {/* Imagem Ampliada */}
             <div className="w-full md:w-1/2 h-64 md:h-auto bg-[#F4F9F8] relative">
               <img 
                 src={selectedProduct.image} 
@@ -965,7 +905,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Conteúdo / Detalhes */}
             <div className="p-6 md:p-8 flex-1 flex flex-col justify-between">
               <div>
                 <h3 className="text-2xl font-bold text-[#4A6B64] mb-2 leading-tight">
@@ -988,7 +927,6 @@ export default function App() {
                   </span>
                 </div>
 
-                {/* Seletor de Quantidade Inteligente */}
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center bg-[#F4F9F8] border border-[#E8F3F2] rounded-xl p-1 shadow-inner">
                     <button 
