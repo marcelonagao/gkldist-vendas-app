@@ -111,6 +111,22 @@ const ShieldIcon = ({ size = 24, className = "" }: { size?: number; className?: 
   </svg>
 );
 
+const BriefcaseIcon = ({ size = 24, className = "" }: { size?: number; className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+    <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+  </svg>
+);
+
+const UsersIcon = ({ size = 24, className = "" }: { size?: number; className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+    <circle cx="9" cy="7" r="4" />
+    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+  </svg>
+);
+
 // ============================================================================
 // CONFIGURAÇÕES DO FIREBASE
 // ============================================================================
@@ -142,6 +158,7 @@ const PRODUCTS_FALLBACK = [
 const MOCK_USERS = {
   b2b_approved: { id: 'u2', name: 'Lojista Beta (Antigo)', isB2B: true, creditLimit: 5000.00, status: 'aprovado' },
   b2b_novato: { id: 'u3', name: 'Nova Loja (Novo)', isB2B: true, creditLimit: 0.00, status: 'pendente' },
+  rep: { id: 'rep_1', name: 'Carlos Vendedor', isRep: true },
   admin: { id: 'admin', name: 'Gestor GKL', isAdmin: true }
 };
 
@@ -196,7 +213,7 @@ const formatPrice = (value: any): string => {
 };
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState('login'); // login, catalog, cart, checkout, success, orders, admin
+  const [currentScreen, setCurrentScreen] = useState('login'); // login, catalog, cart, checkout, success, orders, admin, rep_dashboard
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [cart, setCart] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -204,6 +221,9 @@ export default function App() {
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [modalQuantity, setModalQuantity] = useState(1);
   const [myOrders, setMyOrders] = useState<any[]>([]);
+
+  // NOVO: Estado para armazenar o cliente que o Representante está a atender
+  const [selectedClientForRep, setSelectedClientForRep] = useState<any>(null);
 
   const [activeAuthTab, setActiveAuthTab] = useState<'login' | 'register'>('login');
   const [authEmail, setAuthFormEmail] = useState('');
@@ -213,8 +233,6 @@ export default function App() {
 
   const [firebaseUser, setFirebaseUser] = useState<any>(null);
   const [dbProducts, setDbProducts] = useState<any[]>([]);
-  
-  // NOVO: Estado para armazenar os clientes registados no Firebase
   const [dbClients, setDbClients] = useState<any[]>([]);
 
   useEffect(() => {
@@ -267,7 +285,6 @@ export default function App() {
     return () => unsubscribe();
   }, [firebaseUser]);
 
-  // NOVO: Lê a coleção de Clientes do Firebase em tempo real
   useEffect(() => {
     if (!isFirebaseConfigured || !firebaseUser) return;
     
@@ -285,9 +302,8 @@ export default function App() {
     return () => unsubscribe();
   }, [firebaseUser]);
 
-  // NOVO: Mantém o currentUser sempre atualizado com os dados do Firebase (útil quando o Admin aprova o limite)
   useEffect(() => {
-    if (currentUser && !currentUser.isAdmin && currentUser.id.startsWith('db_')) {
+    if (currentUser && !currentUser.isAdmin && !currentUser.isRep && currentUser.id.startsWith('db_')) {
       const updatedUser = dbClients.find(c => c.id === currentUser.id);
       if (updatedUser && (updatedUser.status !== currentUser.status || updatedUser.creditLimit !== currentUser.creditLimit)) {
         setCurrentUser(updatedUser);
@@ -298,8 +314,11 @@ export default function App() {
   useEffect(() => {
     if (!isFirebaseConfigured || !firebaseUser) return;
 
+    // Determina o ID alvo para ler os pedidos (Cliente Logado ou Cliente atendido pelo Representante)
+    const targetUserId = currentUser?.isRep && selectedClientForRep ? selectedClientForRep.id : firebaseUser.uid;
+
     const orderPath = typeof __app_id !== 'undefined'
-      ? collection(db, 'artifacts', appId, 'users', firebaseUser.uid, 'pedidos')
+      ? collection(db, 'artifacts', appId, 'users', targetUserId, 'pedidos')
       : collection(db, 'pedidos');
 
     const unsubscribe = onSnapshot(orderPath, (snapshot) => {
@@ -316,7 +335,7 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, [firebaseUser]);
+  }, [firebaseUser, currentUser, selectedClientForRep]);
 
   const addToCart = (product: any, quantity = 1) => {
     setCart((prevCart) => {
@@ -337,10 +356,12 @@ export default function App() {
   const cartTotal = cart.reduce((sum, item) => sum + (Number(item.price || 0) * item.quantity), 0);
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  const handleLogin = (userType: 'b2b_approved' | 'b2b_novato' | 'admin') => {
+  const handleLogin = (userType: 'b2b_approved' | 'b2b_novato' | 'admin' | 'rep') => {
     setCurrentUser(MOCK_USERS[userType]);
     if (userType === 'admin') {
       setCurrentScreen('admin');
+    } else if (userType === 'rep') {
+      setCurrentScreen('rep_dashboard');
     } else {
       setCurrentScreen('catalog');
     }
@@ -379,7 +400,6 @@ export default function App() {
           alert("Erro ao criar cadastro. Tente novamente.");
         }
       } else {
-        // Fallback local
         setCurrentUser({ id: 'u_local', ...newUser });
         alert(`Cadastro criado (Localmente).`);
         setCurrentScreen('catalog');
@@ -391,14 +411,12 @@ export default function App() {
         return;
       }
 
-      // Procura o utilizador real na coleção de clientes do Firebase
       const foundClient = dbClients.find(c => c.email.toLowerCase() === authEmail.toLowerCase());
       
       if (foundClient) {
         setCurrentUser({ id: `db_${foundClient.id}`, ...foundClient });
         setCurrentScreen('catalog');
       } else {
-        // Fallback para os acessos rápidos simulados
         const isNovato = authEmail.includes('novo');
         const loggedUser = {
           id: 'u_logged',
@@ -419,6 +437,7 @@ export default function App() {
     setCart([]);
     setSelectedCategory('Todas');
     setSelectedProduct(null);
+    setSelectedClientForRep(null);
     setAuthFormEmail('');
     setAuthFormPassword('');
     setAuthFormName('');
@@ -440,14 +459,20 @@ export default function App() {
     }
 
     try {
+      // Se for representante, guarda o pedido na pasta do cliente selecionado
+      const targetClient = currentUser.isRep ? selectedClientForRep : currentUser;
+      const targetClientId = targetClient?.id || firebaseUser.uid;
+
       const orderPath = typeof __app_id !== 'undefined'
-        ? collection(db, 'artifacts', appId, 'users', firebaseUser.uid, 'pedidos')
+        ? collection(db, 'artifacts', appId, 'users', targetClientId, 'pedidos')
         : collection(db, 'pedidos');
 
       await addDoc(orderPath, {
-        clienteId: currentUser?.id || firebaseUser.uid,
-        clienteNome: currentUser?.name || 'Cliente GKL',
-        isB2B: currentUser?.isB2B || false,
+        clienteId: targetClientId,
+        clienteNome: targetClient?.name || 'Cliente GKL',
+        isB2B: targetClient?.isB2B || false,
+        vendedorId: currentUser.isRep ? currentUser.id : null,     // Rastreamento para comissão do Bling
+        vendedorNome: currentUser.isRep ? currentUser.name : null, // Rastreamento para comissão do Bling
         itens: cart,
         total: cartTotal,
         metodoPagamento: paymentMethod,
@@ -463,7 +488,6 @@ export default function App() {
     }
   };
 
-  // NOVO: Função para o Admin aprovar o crédito de um cliente no Firebase
   const handleApproveCredit = async (clientId: string) => {
     if (!isFirebaseConfigured) {
       alert("Simulação: Cliente aprovado localmente.");
@@ -606,6 +630,14 @@ export default function App() {
             <AlertCircleIcon size={14} /> Entrar como Loja Nova (Progresso 0/3)
           </button>
 
+          {/* NOVO: Acesso Rápido para Representante */}
+          <button
+            onClick={() => handleLogin('rep')}
+            className="w-full flex items-center justify-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 py-2.5 px-4 rounded-xl text-xs font-bold border border-indigo-200 transition"
+          >
+            <BriefcaseIcon size={14} /> Entrar como Representante (Nova Venda)
+          </button>
+
           <button
             onClick={() => handleLogin('admin')}
             className="w-full flex items-center justify-center gap-1.5 bg-gray-800 hover:bg-gray-900 text-white py-2.5 px-4 rounded-xl text-xs font-bold border border-gray-700 transition mt-2 shadow-sm"
@@ -616,6 +648,83 @@ export default function App() {
       </div>
     </div>
   );
+
+  // NOVO: Renderiza a tela de Dashboard do Representante de Vendas
+  const renderRepDashboard = () => {
+    // Filtra para exibir a lista de clientes para o representante atender
+    const filteredClients = dbClients.filter(c => 
+      c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      c.nif.includes(searchQuery)
+    );
+
+    return (
+      <div className="max-w-5xl mx-auto px-4 py-8 pb-24">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h2 className="text-3xl font-extrabold text-[#4A6B64] flex items-center gap-3">
+              <BriefcaseIcon size={32} />
+              Carteira de Clientes
+            </h2>
+            <p className="text-[#698F8A] mt-1">Selecione o lojista para iniciar um novo pedido de venda.</p>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 shadow-sm rounded-2xl mb-6 border border-[#8ECAC5]/20">
+          <div className="relative w-full">
+            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-[#698F8A]" size={20} />
+            <input 
+              type="text" 
+              placeholder="Pesquisar lojista por Razão Social ou CNPJ..." 
+              className="w-full bg-[#F4F9F8] text-[#4A6B64] rounded-xl py-3 pl-10 pr-4 outline-none focus:ring-2 focus:ring-[#8ECAC5] transition border border-transparent focus:border-[#8ECAC5]"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {dbClients.length === 0 ? (
+          <div className="bg-white p-8 rounded-2xl shadow-sm text-center border border-[#E8F3F2]">
+            <UsersIcon size={48} className="mx-auto text-[#8ECAC5]/50 mb-4" />
+            <p className="text-[#698F8A]">Nenhum cliente na sua carteira.</p>
+          </div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {filteredClients.map(client => (
+              <div key={client.id} className="bg-white p-6 rounded-2xl shadow-sm border border-[#E8F3F2] hover:border-[#8ECAC5] transition-all group">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h4 className="font-bold text-lg text-[#4A6B64] group-hover:text-[#8ECAC5] transition-colors">{client.name}</h4>
+                    <span className="text-sm text-[#698F8A] block">CNPJ: {client.nif}</span>
+                  </div>
+                  {client.status === 'aprovado' || client.creditLimit > 0 ? (
+                    <span className="bg-[#E8F3F2] text-[#4A6B64] text-xs font-extrabold px-3 py-1 rounded-full">Crédito Aprovado</span>
+                  ) : (
+                    <span className="bg-yellow-50 text-yellow-700 border border-yellow-200 text-xs font-extrabold px-3 py-1 rounded-full">À Vista (PIX/Cartão)</span>
+                  )}
+                </div>
+                
+                <div className="flex justify-between items-end mt-4 pt-4 border-t border-[#F4F9F8]">
+                  <div>
+                    <span className="text-xs text-[#698F8A] block">Limite Disponível</span>
+                    <span className="font-bold text-[#8ECAC5]">R$ {formatPrice(client.creditLimit)}</span>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      setSelectedClientForRep(client);
+                      setCurrentScreen('catalog');
+                    }}
+                    className="bg-[#4A6B64] hover:bg-[#3A5A53] text-white px-5 py-2.5 rounded-xl font-bold shadow-sm transition-all active:scale-95 text-sm"
+                  >
+                    Iniciar Pedido
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderCatalog = () => {
     const uniqueCategories = ['Todas', ...Array.from(new Set(dbProducts.map(p => p.category).filter(Boolean)))];
@@ -628,17 +737,19 @@ export default function App() {
       return textMatch && categoryFilterMatch;
     });
 
+    const targetClient = currentUser?.isRep ? selectedClientForRep : currentUser;
+
     const targetOrders = 3;
     const currentOrders = myOrders.length;
     const remainingOrders = Math.max(0, targetOrders - currentOrders);
     const progressPercent = Math.min(100, (currentOrders / targetOrders) * 100);
     const hasReachedTarget = currentOrders >= targetOrders;
-    const isApproved = currentUser?.creditLimit > 0;
+    const isApproved = targetClient?.creditLimit > 0;
 
     return (
       <div className="pb-24">
         {/* Barra de Progresso Inteligente (Apenas para lojistas sem crédito) */}
-        {!isApproved && currentUser && !currentUser.isAdmin && (
+        {!isApproved && targetClient && !currentUser.isAdmin && (
           <div className={`p-4 border-b ${hasReachedTarget ? 'bg-[#E8F3F2] border-[#8ECAC5]' : 'bg-yellow-50 border-yellow-200'}`}>
             <div className="max-w-6xl mx-auto">
               <div className="flex items-center gap-3 mb-2">
@@ -803,8 +914,10 @@ export default function App() {
   );
 
   const renderCheckout = () => {
-    const isApproved = currentUser?.creditLimit > 0;
-    const canUseCredit = currentUser?.isB2B && isApproved && currentUser.creditLimit >= cartTotal;
+    const targetClient = currentUser?.isRep ? selectedClientForRep : currentUser;
+    const isApproved = targetClient?.creditLimit > 0;
+    const canUseCredit = targetClient?.isB2B && isApproved && targetClient.creditLimit >= cartTotal;
+    
     const currentOrders = myOrders.length;
     const hasReachedTarget = currentOrders >= 3;
 
@@ -818,19 +931,19 @@ export default function App() {
         </div>
 
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-[#E8F3F2] mb-6">
-          <h3 className="font-bold text-[#698F8A] mb-2">Resumo</h3>
+          <h3 className="font-bold text-[#698F8A] mb-2">Resumo do Pedido</h3>
           <p className="text-[#4A6B64]">Valor total a pagar: <strong className="text-2xl ml-2 text-[#8ECAC5]">R$ {formatPrice(cartTotal)}</strong></p>
           
-          {currentUser?.isB2B && (
+          {targetClient?.isB2B && (
             <div className={`mt-4 p-4 rounded-xl text-sm border ${canUseCredit ? 'bg-[#E8F3F2] border-[#8ECAC5] text-[#4A6B64]' : 'bg-red-50 border-red-200 text-red-800'}`}>
-              <strong className="text-base">Seu Limite B2B Faturado: R$ {formatPrice(currentUser.creditLimit)}</strong>
+              <strong className="text-base">Limite B2B do Lojista: R$ {formatPrice(targetClient.creditLimit)}</strong>
               {!isApproved ? (
                 <p className="mt-1 font-semibold flex items-center gap-1">
                   <AlertCircleIcon size={14}/> 
                   {hasReachedTarget ? 'Crédito bloqueado. Cadastro em análise comercial.' : `Faltam ${3 - currentOrders} compras para liberar avaliação.`}
                 </p>
               ) : !canUseCredit ? (
-                <p className="mt-1">O valor do pedido excede seu limite de crédito aprovado.</p>
+                <p className="mt-1">O valor do pedido excede o limite de crédito aprovado deste cliente.</p>
               ) : null}
             </div>
           )}
@@ -855,7 +968,7 @@ export default function App() {
               <div>
                 <h4 className={`font-bold text-lg ${canUseCredit ? 'text-[#4A6B64]' : 'text-gray-500'}`}>Boleto Faturado (30/60/90)</h4>
                 <p className={`text-sm ${canUseCredit ? 'text-[#698F8A]' : 'text-gray-400'}`}>
-                  {!isApproved ? (hasReachedTarget ? 'Em análise financeira.' : `Exige 3 compras à vista (você tem ${currentOrders}).`) : 'Utilizar limite de crédito aprovado.'}
+                  {!isApproved ? (hasReachedTarget ? 'Em análise financeira.' : `Exige 3 compras à vista (o cliente tem ${currentOrders}).`) : 'Utilizar limite de crédito aprovado.'}
                 </p>
               </div>
             </div>
@@ -882,7 +995,7 @@ export default function App() {
               <div className="bg-blue-50 p-3 rounded-xl text-blue-500"><CreditCardIcon size={24} /></div>
               <div>
                 <h4 className="font-bold text-[#4A6B64] text-lg">Cartão de Crédito</h4>
-                <p className="text-[#698F8A] text-sm">Até 12x com juros da operadora.</p>
+                <p className="text-[#698F8A] text-sm">Cobrado com o cliente na máquina ou link online.</p>
               </div>
             </div>
           </button>
@@ -905,12 +1018,25 @@ export default function App() {
         >
           Fazer novo pedido
         </button>
-        <button 
-          onClick={() => setCurrentScreen('orders')}
-          className="bg-white border border-[#4A6B64] text-[#4A6B64] px-8 py-3 rounded-xl font-bold hover:bg-[#E8F3F2] transition shadow-sm"
-        >
-          Ver meus pedidos
-        </button>
+        {/* Representante volta para a carteira de clientes */}
+        {currentUser?.isRep ? (
+           <button 
+             onClick={() => {
+               setSelectedClientForRep(null);
+               setCurrentScreen('rep_dashboard');
+             }}
+             className="bg-white border border-[#4A6B64] text-[#4A6B64] px-8 py-3 rounded-xl font-bold hover:bg-[#E8F3F2] transition shadow-sm"
+           >
+             Atender outro cliente
+           </button>
+        ) : (
+          <button 
+            onClick={() => setCurrentScreen('orders')}
+            className="bg-white border border-[#4A6B64] text-[#4A6B64] px-8 py-3 rounded-xl font-bold hover:bg-[#E8F3F2] transition shadow-sm"
+          >
+            Ver meus pedidos
+          </button>
+        )}
       </div>
     </div>
   );
@@ -921,13 +1047,13 @@ export default function App() {
         <button onClick={() => setCurrentScreen('catalog')} className="p-2 hover:bg-[#E8F3F2] text-[#4A6B64] rounded-full transition">
           <ArrowLeftIcon size={24} />
         </button>
-        <h2 className="text-2xl font-bold text-[#4A6B64]">Meus Pedidos</h2>
+        <h2 className="text-2xl font-bold text-[#4A6B64]">Histórico de Pedidos</h2>
       </div>
 
       {myOrders.length === 0 ? (
         <div className="text-center py-12 bg-white rounded-2xl shadow-sm border border-[#E8F3F2]">
           <ClipboardIcon size={48} className="mx-auto text-[#8ECAC5]/50 mb-4" />
-          <p className="text-[#698F8A]">Nenhum pedido efetuado até ao momento.</p>
+          <p className="text-[#698F8A]">Nenhum pedido efetuado até ao momento para este cliente.</p>
           <button 
             onClick={() => setCurrentScreen('catalog')}
             className="mt-4 text-[#8ECAC5] font-bold hover:underline"
@@ -977,6 +1103,9 @@ export default function App() {
                 <div>
                   <span className="text-xs text-[#698F8A] block">Pagamento</span>
                   <span className="text-xs font-bold uppercase text-[#4A6B64]">{order.metodoPagamento?.replace('_', ' ') || 'Não especificado'}</span>
+                  {order.vendedorNome && (
+                    <span className="text-xs font-semibold text-indigo-400 block mt-1">Vend. {order.vendedorNome}</span>
+                  )}
                 </div>
                 <div className="text-right">
                   <span className="text-xs text-[#698F8A] block">Total</span>
@@ -990,9 +1119,7 @@ export default function App() {
     </div>
   );
 
-  // NOVO: Renderiza o Painel Administrativo de Gestão de Clientes
   const renderAdmin = () => {
-    // Separa os clientes pendentes dos aprovados
     const pendingClients = dbClients.filter(c => c.status === 'pendente');
     const approvedClients = dbClients.filter(c => c.status === 'aprovado' || c.creditLimit > 0);
 
@@ -1015,7 +1142,6 @@ export default function App() {
           </div>
         ) : (
           <div className="space-y-8">
-            {/* Secção de Clientes Pendentes (Prioridade) */}
             <div>
               <h3 className="text-xl font-bold text-yellow-700 mb-4 flex items-center gap-2">
                 <AlertCircleIcon size={24} /> 
@@ -1049,7 +1175,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Secção de Clientes Aprovados */}
             <div>
               <h3 className="text-xl font-bold text-[#4A6B64] mb-4 flex items-center gap-2">
                 <CheckCircleIcon size={24} /> 
@@ -1081,34 +1206,49 @@ export default function App() {
       {currentUser && currentScreen !== 'login' && (
         <header className="bg-white border-b border-[#8ECAC5]/30 text-[#4A6B64] p-4 sticky top-0 z-20 shadow-sm">
           <div className="max-w-6xl mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-2" onClick={() => !currentUser.isAdmin && setCurrentScreen('catalog')} style={{cursor: currentUser.isAdmin ? 'default' : 'pointer'}}>
+            <div className="flex items-center gap-2" onClick={() => {
+              if (currentUser.isAdmin) return;
+              if (currentUser.isRep && !selectedClientForRep) return;
+              setCurrentScreen('catalog');
+            }} style={{cursor: (currentUser.isAdmin || (currentUser.isRep && !selectedClientForRep)) ? 'default' : 'pointer'}}>
               <SparklesIcon size={24} className="text-[#8ECAC5]" />
               <div className="flex flex-col">
                 <span className="font-bold text-lg leading-tight hidden sm:block text-[#8ECAC5]">GKL BRASIL</span>
                 <span className="text-[10px] font-bold tracking-wider uppercase text-[#698F8A] leading-none hidden sm:block">
-                  {currentUser.isAdmin ? 'Painel Administrativo' : 'Distribuidora'}
+                  {currentUser.isAdmin ? 'Painel Administrativo' : currentUser.isRep ? 'Portal do Representante' : 'Distribuidora'}
                 </span>
               </div>
             </div>
             
             <div className="flex items-center gap-6">
               <div className="text-sm text-right hidden sm:block text-[#698F8A]">
-                Olá, <span className="font-bold text-[#4A6B64]">{currentUser.name}</span>
                 {currentUser.isAdmin ? (
-                  <div className="text-xs font-semibold text-gray-500">Acesso Nível Gestão</div>
-                ) : currentUser.isB2B && (
-                  <div className="text-xs font-semibold text-[#8ECAC5]">
-                    {currentUser.creditLimit > 0 ? `Limite: R$ ${formatPrice(currentUser.creditLimit)}` : (myOrders.length >= 3 ? 'Conta em Análise' : `Compras: ${myOrders.length}/3`)}
-                  </div>
+                   <>Olá, <span className="font-bold text-[#4A6B64]">{currentUser.name}</span><div className="text-xs font-semibold text-gray-500">Acesso Nível Gestão</div></>
+                ) : currentUser.isRep ? (
+                   <>
+                     <span className="font-bold text-indigo-400 mr-1">Rep. {currentUser.name}</span>
+                     <div className="text-xs font-semibold text-[#4A6B64]">
+                       {selectedClientForRep ? `Atendendo: ${selectedClientForRep.name}` : 'Selecione um cliente'}
+                     </div>
+                   </>
+                ) : (
+                   <>
+                     Olá, <span className="font-bold text-[#4A6B64]">{currentUser.name}</span>
+                     {currentUser.isB2B && (
+                       <div className="text-xs font-semibold text-[#8ECAC5]">
+                         {currentUser.creditLimit > 0 ? `Limite: R$ ${formatPrice(currentUser.creditLimit)}` : (myOrders.length >= 3 ? 'Conta em Análise' : `Compras: ${myOrders.length}/3`)}
+                       </div>
+                     )}
+                   </>
                 )}
               </div>
 
-              {!currentUser.isAdmin && (
+              {!currentUser.isAdmin && (!currentUser.isRep || (currentUser.isRep && selectedClientForRep)) && (
                 <>
                   <button 
                     onClick={() => setCurrentScreen('orders')}
                     className={`p-2 rounded-full transition ${currentScreen === 'orders' ? 'bg-[#E8F3F2] text-[#4A6B64]' : 'hover:bg-[#E8F3F2] text-[#698F8A]'}`}
-                    title="Meus Pedidos"
+                    title="Histórico de Pedidos"
                   >
                     <ClipboardIcon size={22} />
                   </button>
@@ -1127,6 +1267,20 @@ export default function App() {
                 </>
               )}
 
+              {/* Botão para Representante trocar de cliente ativamente */}
+              {currentUser.isRep && selectedClientForRep && currentScreen !== 'rep_dashboard' && (
+                 <button 
+                   onClick={() => {
+                     setSelectedClientForRep(null);
+                     setCart([]);
+                     setCurrentScreen('rep_dashboard');
+                   }}
+                   className="text-xs font-bold text-indigo-400 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition"
+                 >
+                   Trocar Loja
+                 </button>
+              )}
+
               <button onClick={handleLogout} className="text-[#698F8A] hover:text-[#4A6B64] transition" title="Sair">
                 <LogOutIcon size={24} />
               </button>
@@ -1136,6 +1290,7 @@ export default function App() {
       )}
 
       {currentScreen === 'login' && renderLogin()}
+      {currentScreen === 'rep_dashboard' && renderRepDashboard()}
       {currentScreen === 'catalog' && renderCatalog()}
       {currentScreen === 'cart' && renderCart()}
       {currentScreen === 'checkout' && renderCheckout()}
