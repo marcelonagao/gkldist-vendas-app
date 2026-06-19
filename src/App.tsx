@@ -72,6 +72,24 @@ const SparklesIcon = ({ size = 24, className = "" }: { size?: number; className?
   </svg>
 );
 
+const PlusIcon = ({ size = 20, className = "" }: { size?: number; className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+  </svg>
+);
+
+const MinusIcon = ({ size = 20, className = "" }: { size?: number; className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <line x1="5" y1="12" x2="19" y2="12" />
+  </svg>
+);
+
+const CloseIcon = ({ size = 24, className = "" }: { size?: number; className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+
 // ============================================================================
 // CONFIGURAÇÕES DO FIREBASE
 // ============================================================================
@@ -121,7 +139,7 @@ const normalizeProduct = (docId: string, data: any) => {
   };
 
   const name = getFieldValue(['name', 'nome', 'titulo', 'title']) || 'Produto sem Nome';
-  const category = getFieldValue(['category', 'categoria']) || '';
+  const category = getFieldValue(['category', 'categoria']) || 'Sem Categoria';
   const image = getFieldValue(['image', 'imagem', 'foto', 'url', 'link']) || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?auto=format&fit=crop&q=80&w=400';
   
   const stockVal = getFieldValue(['stock', 'estoque', 'qtd', 'quantidade']);
@@ -139,13 +157,18 @@ const normalizeProduct = (docId: string, data: any) => {
     }
   }
 
+  // Descrição mockada ou campo vindo do Firestore se houver
+  const description = getFieldValue(['description', 'descricao', 'descrição']) || 
+    'Produto oficial distribuído pela GKL Brasil. Qualidade garantida e excelência no cuidado que você merece.';
+
   return {
     id: docId,
     name,
     category,
     price,
     stock: isNaN(stock) ? 0 : stock,
-    image
+    image,
+    description
   };
 };
 
@@ -160,12 +183,19 @@ export default function App() {
   const [cart, setCart] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Opção 1: Filtro de Categoria Selecionada
+  const [selectedCategory, setSelectedCategory] = useState('Todas');
+
+  // Opção 2: Ecrã de Detalhes do Produto (Modal)
+  const [selectedProduct, setSelectedProduct] = useState<any>(null);
+  const [modalQuantity, setModalQuantity] = useState(1);
+
   const [firebaseUser, setFirebaseUser] = useState<any>(null);
   const [dbProducts, setDbProducts] = useState<any[]>([]);
 
   useEffect(() => {
     if (!isFirebaseConfigured) {
-      setDbProducts(PRODUCTS_FALLBACK);
+      setDbProducts(PRODUCTS_FALLBACK.map(p => normalizeProduct(String(p.id), p)));
       return;
     }
 
@@ -194,7 +224,7 @@ export default function App() {
 
   useEffect(() => {
     if (!isFirebaseConfigured || !firebaseUser) {
-      setDbProducts(PRODUCTS_FALLBACK);
+      setDbProducts(PRODUCTS_FALLBACK.map(p => normalizeProduct(String(p.id), p)));
       return;
     }
     
@@ -207,25 +237,26 @@ export default function App() {
       if (fetchedProducts.length > 0) {
         setDbProducts(fetchedProducts);
       } else {
-        setDbProducts(PRODUCTS_FALLBACK);
+        setDbProducts(PRODUCTS_FALLBACK.map(p => normalizeProduct(String(p.id), p)));
       }
     }, (error) => {
       console.error("Aviso do Firestore:", error);
-      setDbProducts(PRODUCTS_FALLBACK);
+      setDbProducts(PRODUCTS_FALLBACK.map(p => normalizeProduct(String(p.id), p)));
     });
     
     return () => unsubscribe();
   }, [firebaseUser]);
 
-  const addToCart = (product: any) => {
+  // Lógica inteligente para suportar adição de múltiplas quantidades (Modal)
+  const addToCart = (product: any, quantity = 1) => {
     setCart((prevCart) => {
       const existingItem = prevCart.find(item => item.id === product.id);
       if (existingItem) {
         return prevCart.map(item => 
-          item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+          item.id === product.id ? { ...item, quantity: item.quantity + quantity } : item
         );
       }
-      return [...prevCart, { ...product, quantity: 1 }];
+      return [...prevCart, { ...product, quantity }];
     });
   };
 
@@ -244,6 +275,8 @@ export default function App() {
   const handleLogout = () => {
     setCurrentUser(null);
     setCart([]);
+    setSelectedCategory('Todas');
+    setSelectedProduct(null);
     setCurrentScreen('login');
   };
 
@@ -284,6 +317,12 @@ export default function App() {
     }
   };
 
+  // Abre o Modal de Detalhes
+  const openProductDetails = (product: any) => {
+    setSelectedProduct(product);
+    setModalQuantity(1);
+  };
+
   const renderLogin = () => (
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#F4F9F8] p-6">
       <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md text-center border border-[#8ECAC5]/20">
@@ -313,15 +352,23 @@ export default function App() {
   );
 
   const renderCatalog = () => {
+    // Extrai categorias únicas dinamicamente para alimentar o Filtro Rápido (Opção 1)
+    const uniqueCategories = ['Todas', ...Array.from(new Set(dbProducts.map(p => p.category).filter(Boolean)))];
+
     const filteredProducts = dbProducts.filter(p => {
       const nameMatch = p.name ? p.name.toLowerCase().includes(searchQuery.toLowerCase()) : false;
-      const categoryMatch = p.category ? p.category.toLowerCase().includes(searchQuery.toLowerCase()) : false;
-      return nameMatch || categoryMatch;
+      const categorySearchMatch = p.category ? p.category.toLowerCase().includes(searchQuery.toLowerCase()) : false;
+      const textMatch = nameMatch || categorySearchMatch;
+
+      const categoryFilterMatch = selectedCategory === 'Todas' || p.category === selectedCategory;
+
+      return textMatch && categoryFilterMatch;
     });
 
     return (
       <div className="pb-24">
-        <div className="bg-white p-4 shadow-sm sticky top-16 z-10 mb-6 border-b border-[#8ECAC5]/20">
+        {/* Barra de Busca */}
+        <div className="bg-white p-4 shadow-sm sticky top-16 z-10 mb-2 border-b border-[#8ECAC5]/20">
           <div className="relative max-w-3xl mx-auto">
             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-[#698F8A]" size={20} />
             <input 
@@ -334,13 +381,47 @@ export default function App() {
           </div>
         </div>
 
+        {/* Opção 1: Filtro Rápido de Categorias (Carrossel Horizontal) */}
+        <div className="max-w-6xl mx-auto px-4 mb-6">
+          <div className="flex gap-2 overflow-x-auto py-2 scrollbar-none">
+            {uniqueCategories.map(cat => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-4 py-2 rounded-full font-semibold text-sm whitespace-nowrap transition-all duration-300 ${
+                  selectedCategory === cat 
+                    ? 'bg-[#4A6B64] text-white shadow-md transform scale-105' 
+                    : 'bg-white text-[#4A6B64] border border-[#E8F3F2] hover:bg-[#E8F3F2]'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Grelha de Produtos */}
         <div className="max-w-6xl mx-auto px-4">
-          <h2 className="text-xl font-bold text-[#4A6B64] mb-6">Nosso Catálogo</h2>
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-bold text-[#4A6B64]">
+              {selectedCategory === 'Todas' ? 'Nosso Catálogo' : selectedCategory}
+            </h2>
+            <span className="text-sm text-[#698F8A] font-semibold">{filteredProducts.length} itens encontrados</span>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredProducts.map(product => (
-              <div key={product.id} className="bg-white rounded-2xl shadow-sm overflow-hidden flex flex-col border border-[#E8F3F2] hover:shadow-md transition hover:border-[#8ECAC5]/50">
+              <div 
+                key={product.id} 
+                onClick={() => openProductDetails(product)}
+                className="bg-white rounded-2xl shadow-sm overflow-hidden flex flex-col border border-[#E8F3F2] hover:shadow-md transition-all duration-300 hover:border-[#8ECAC5]/50 cursor-pointer group"
+              >
                 <div className="h-48 overflow-hidden bg-[#F4F9F8] relative">
-                  <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+                  <img 
+                    src={product.image} 
+                    alt={product.name} 
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                  />
                   {product.category && (
                     <span className="absolute top-3 right-3 bg-white/90 text-[#4A6B64] text-xs font-semibold px-3 py-1 rounded-full shadow-sm">
                       {product.category}
@@ -348,15 +429,18 @@ export default function App() {
                   )}
                 </div>
                 <div className="p-4 flex-1 flex flex-col">
-                  <h3 className="text-lg font-bold text-[#4A6B64]">{product.name}</h3>
+                  <h3 className="text-lg font-bold text-[#4A6B64] group-hover:text-[#8ECAC5] transition-colors">{product.name}</h3>
                   <p className="text-sm text-[#698F8A] mb-4">Estoque: {product.stock} un</p>
                   <div className="mt-auto flex items-center justify-between">
                     <span className="text-xl font-bold text-[#8ECAC5]">R$ {formatPrice(product.price)}</span>
                     <button 
-                      onClick={() => addToCart(product)}
-                      className="bg-[#4A6B64] text-white p-2 rounded-lg hover:bg-[#8ECAC5] transition shadow-sm"
+                      onClick={(e) => {
+                        e.stopPropagation(); // Evita abrir o modal ao clicar direto no carrinho
+                        addToCart(product, 1);
+                      }}
+                      className="bg-[#4A6B64] text-white p-2.5 rounded-xl hover:bg-[#8ECAC5] transition shadow-sm hover:scale-110 duration-300"
                     >
-                      <ShoppingCartIcon size={20} />
+                      <ShoppingCartIcon size={18} />
                     </button>
                   </div>
                 </div>
@@ -515,7 +599,7 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-[#F4F9F8] font-sans">
+    <div className="min-h-screen bg-[#F4F9F8] font-sans relative">
       {currentUser && currentScreen !== 'login' && (
         <header className="bg-white border-b border-[#8ECAC5]/30 text-[#4A6B64] p-4 sticky top-0 z-20 shadow-sm">
           <div className="max-w-6xl mx-auto flex items-center justify-between">
@@ -558,6 +642,92 @@ export default function App() {
       {currentScreen === 'cart' && renderCart()}
       {currentScreen === 'checkout' && renderCheckout()}
       {currentScreen === 'success' && renderSuccess()}
+
+      {/* Opção 2: Ecrã de Detalhes do Produto - Modal Flutuante */}
+      {selectedProduct && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300">
+          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto md:overflow-hidden shadow-2xl relative animate-in fade-in zoom-in-95 duration-200 flex flex-col md:flex-row border border-[#8ECAC5]/10">
+            {/* Botão de Fechar */}
+            <button 
+              onClick={() => setSelectedProduct(null)}
+              className="absolute top-4 right-4 bg-white/80 p-2 rounded-full text-[#4A6B64] hover:bg-[#E8F3F2] transition z-10 shadow-sm"
+            >
+              <CloseIcon size={20} />
+            </button>
+
+            {/* Imagem Ampliada */}
+            <div className="w-full md:w-1/2 h-64 md:h-auto bg-[#F4F9F8] relative">
+              <img 
+                src={selectedProduct.image} 
+                alt={selectedProduct.name} 
+                className="w-full h-full object-cover"
+              />
+              {selectedProduct.category && (
+                <span className="absolute top-4 left-4 bg-[#8ECAC5] text-white text-xs font-semibold px-3 py-1 rounded-full shadow-md">
+                  {selectedProduct.category}
+                </span>
+              )}
+            </div>
+
+            {/* Conteúdo / Detalhes */}
+            <div className="p-6 md:p-8 flex-1 flex flex-col justify-between">
+              <div>
+                <h3 className="text-2xl font-bold text-[#4A6B64] mb-2 leading-tight">
+                  {selectedProduct.name}
+                </h3>
+                <span className="inline-block bg-[#E8F3F2] text-[#4A6B64] text-xs font-bold px-3 py-1 rounded-full mb-4">
+                  Estoque: {selectedProduct.stock} un
+                </span>
+                
+                <p className="text-sm text-[#698F8A] leading-relaxed mb-6">
+                  {selectedProduct.description}
+                </p>
+              </div>
+
+              <div>
+                <div className="flex items-baseline gap-2 mb-6">
+                  <span className="text-xs font-semibold text-[#698F8A] uppercase">Preço</span>
+                  <span className="text-3xl font-extrabold text-[#8ECAC5]">
+                    R$ {formatPrice(selectedProduct.price)}
+                  </span>
+                </div>
+
+                {/* Seletor de Quantidade Inteligente */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center bg-[#F4F9F8] border border-[#E8F3F2] rounded-xl p-1 shadow-inner">
+                    <button 
+                      onClick={() => setModalQuantity(prev => Math.max(1, prev - 1))}
+                      className="p-2 text-[#4A6B64] hover:bg-white rounded-lg transition"
+                    >
+                      <MinusIcon size={16} />
+                    </button>
+                    <span className="px-4 font-bold text-[#4A6B64] min-w-[32px] text-center">
+                      {modalQuantity}
+                    </span>
+                    <button 
+                      onClick={() => setModalQuantity(prev => Math.min(selectedProduct.stock || 999, prev + 1))}
+                      className="p-2 text-[#4A6B64] hover:bg-white rounded-lg transition"
+                    >
+                      <PlusIcon size={16} />
+                    </button>
+                  </div>
+
+                  <button 
+                    onClick={() => {
+                      addToCart(selectedProduct, modalQuantity);
+                      setSelectedProduct(null);
+                    }}
+                    className="flex-1 bg-[#4A6B64] hover:bg-[#3A5A53] text-white py-3 px-6 rounded-xl font-bold flex items-center justify-center gap-2 transition shadow-md active:scale-95"
+                  >
+                    <ShoppingCartIcon size={18} />
+                    Adicionar ({modalQuantity})
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
