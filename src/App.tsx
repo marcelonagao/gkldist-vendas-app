@@ -90,6 +90,20 @@ const CloseIcon = ({ size = 24, className = "" }: { size?: number; className?: s
   </svg>
 );
 
+const ClipboardIcon = ({ size = 24, className = "" }: { size?: number; className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+    <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+  </svg>
+);
+
+const LockIcon = ({ size = 20, className = "" }: { size?: number; className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+  </svg>
+);
+
 // ============================================================================
 // CONFIGURAÇÕES DO FIREBASE
 // ============================================================================
@@ -120,11 +134,6 @@ const PRODUCTS_FALLBACK = [
   { id: 5, name: 'Esmalte Face Beautiful', category: 'Unhas', price: 4.50, stock: 200, image: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&q=80&w=400' },
   { id: 6, name: 'Kit Lixa de Unha (100 un)', category: 'Acessórios', price: 15.00, stock: 30, image: 'https://images.unsplash.com/photo-1522337660859-02fbefca4702?auto=format&fit=crop&q=80&w=400' },
 ];
-
-const MOCK_USERS = {
-  normal: { id: 'u1', name: 'João Silva', isB2B: false, creditLimit: 0 },
-  b2b: { id: 'u2', name: 'Lojista Beta', isB2B: true, creditLimit: 5000.00 }
-};
 
 // --- FUNÇÃO AUXILIAR: TRADUZ E ADAPTA CAMPOS DO PORTUGUÊS E CORRIGE VÍRGULAS ---
 const normalizeProduct = (docId: string, data: any) => {
@@ -157,7 +166,6 @@ const normalizeProduct = (docId: string, data: any) => {
     }
   }
 
-  // Descrição mockada ou campo vindo do Firestore se houver
   const description = getFieldValue(['description', 'descricao', 'descrição']) || 
     'Produto oficial distribuído pela GKL Brasil. Qualidade garantida e excelência no cuidado que você merece.';
 
@@ -178,7 +186,7 @@ const formatPrice = (value: any): string => {
 };
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState('login'); 
+  const [currentScreen, setCurrentScreen] = useState('login'); // login, catalog, cart, checkout, success, orders
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [cart, setCart] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -189,6 +197,17 @@ export default function App() {
   // Opção 2: Ecrã de Detalhes do Produto (Modal)
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [modalQuantity, setModalQuantity] = useState(1);
+
+  // Opção 3: Estado de Histórico de Pedidos
+  const [myOrders, setMyOrders] = useState<any[]>([]);
+
+  // Opção 4: Estado do Formulário de Registo e Login Real
+  const [activeAuthTab, setActiveAuthTab] = useState<'login' | 'register'>('login');
+  const [authEmail, setAuthFormEmail] = useState('');
+  const [authPassword, setAuthFormPassword] = useState('');
+  const [authName, setAuthFormName] = useState('');
+  const [authNIF, setAuthFormNif] = useState('');
+  const [authClientType, setAuthFormClientType] = useState<'normal' | 'b2b'>('normal');
 
   const [firebaseUser, setFirebaseUser] = useState<any>(null);
   const [dbProducts, setDbProducts] = useState<any[]>([]);
@@ -206,7 +225,7 @@ export default function App() {
             await signInWithCustomToken(auth, __initial_auth_token);
             return;
           } catch (tokenError) {
-            console.warn("Falha no login por token customizado, tentando login anônimo:", tokenError);
+            console.warn("Falha no login por token customizado, tentando login anônimo de fallback:", tokenError);
           }
         }
         await signInAnonymously(auth);
@@ -223,31 +242,53 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!isFirebaseConfigured || !firebaseUser) {
-      setDbProducts(PRODUCTS_FALLBACK.map(p => normalizeProduct(String(p.id), p)));
-      return;
-    }
+    if (!isFirebaseConfigured || !firebaseUser) return;
     
+    // Leitura do catálogo de produtos em tempo real
     const path = typeof __app_id !== 'undefined' 
       ? collection(db, 'artifacts', appId, 'public', 'data', 'produtos')
       : collection(db, 'produtos'); 
       
     const unsubscribe = onSnapshot(path, (snapshot) => {
-      const fetchedProducts = snapshot.docs.map(doc => normalizeProduct(doc.id, doc.data()));
+      const fetchedProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       if (fetchedProducts.length > 0) {
-        setDbProducts(fetchedProducts);
+        setDbProducts(fetchedProducts as any);
       } else {
         setDbProducts(PRODUCTS_FALLBACK.map(p => normalizeProduct(String(p.id), p)));
       }
     }, (error) => {
-      console.error("Aviso do Firestore:", error);
-      setDbProducts(PRODUCTS_FALLBACK.map(p => normalizeProduct(String(p.id), p)));
+      console.error("Aviso do Firestore (produtos):", error);
     });
     
     return () => unsubscribe();
   }, [firebaseUser]);
 
-  // Lógica inteligente para suportar adição de múltiplas quantidades (Modal)
+  // Opção 3: Escuta ativa de pedidos em tempo real no Firebase
+  useEffect(() => {
+    if (!isFirebaseConfigured || !firebaseUser) return;
+
+    const orderPath = typeof __app_id !== 'undefined'
+      ? collection(db, 'artifacts', appId, 'users', firebaseUser.uid, 'pedidos')
+      : collection(db, 'pedidos');
+
+    const unsubscribe = onSnapshot(orderPath, (snapshot) => {
+      const fetchedOrders = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      // Ordena por data decrescente (pedidos recentes primeiro)
+      fetchedOrders.sort((a: any, b: any) => {
+        return new Date(b.dataCriacao || 0).getTime() - new Date(a.dataCriacao || 0).getTime();
+      });
+      setMyOrders(fetchedOrders);
+    }, (error) => {
+      console.error("Aviso do Firestore (pedidos):", error);
+    });
+
+    return () => unsubscribe();
+  }, [firebaseUser]);
+
+  // Lógica de adição ao carrinho
   const addToCart = (product: any, quantity = 1) => {
     setCart((prevCart) => {
       const existingItem = prevCart.find(item => item.id === product.id);
@@ -267,9 +308,44 @@ export default function App() {
   const cartTotal = cart.reduce((sum, item) => sum + (Number(item.price || 0) * item.quantity), 0);
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  const handleLogin = (userType: 'normal' | 'b2b') => {
-    setCurrentUser(MOCK_USERS[userType]);
-    setCurrentScreen('catalog');
+  // Opção 4: Registo e Autenticação de Utilizadores
+  const handleAuthSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (activeAuthTab === 'register') {
+      if (!authName || !authEmail || !authPassword || !authNIF) {
+        alert("Por favor, preencha todos os campos para efetuar o registo.");
+        return;
+      }
+      // Registo Real Simulado (atualizando o estado do currentUser com os dados fornecidos)
+      const newUser = {
+        id: 'u_' + Math.random().toString(36).substring(2, 9),
+        name: authName,
+        email: authEmail,
+        isB2B: authClientType === 'b2b',
+        creditLimit: authClientType === 'b2b' ? 5000.00 : 0,
+        nif: authNIF
+      };
+      setCurrentUser(newUser);
+      alert(`Conta criada com sucesso! Bem-vindo(a) à GKL, ${authName}.`);
+      setCurrentScreen('catalog');
+    } else {
+      // Login Simulado
+      if (!authEmail || !authPassword) {
+        alert("Por favor, introduza o seu Email e Palavra-passe.");
+        return;
+      }
+      // Verifica se é lojista ou cliente padrão baseado nas credenciais ou simulação
+      const isB2BUser = authEmail.includes('lojista') || authEmail.includes('b2b');
+      const loggedUser = {
+        id: 'u_logged',
+        name: isB2BUser ? 'Distribuidora Alpha' : 'João Silva',
+        email: authEmail,
+        isB2B: isB2BUser,
+        creditLimit: isB2BUser ? 5000.00 : 0
+      };
+      setCurrentUser(loggedUser);
+      setCurrentScreen('catalog');
+    }
   };
 
   const handleLogout = () => {
@@ -277,6 +353,10 @@ export default function App() {
     setCart([]);
     setSelectedCategory('Todas');
     setSelectedProduct(null);
+    setAuthFormEmail('');
+    setAuthFormPassword('');
+    setAuthFormName('');
+    setAuthFormNif('');
     setCurrentScreen('login');
   };
 
@@ -299,9 +379,9 @@ export default function App() {
         : collection(db, 'pedidos');
 
       await addDoc(orderPath, {
-        clienteId: currentUser.id,
-        clienteNome: currentUser.name,
-        isB2B: currentUser.isB2B,
+        clienteId: currentUser?.id || firebaseUser.uid,
+        clienteNome: currentUser?.name || 'Cliente GKL',
+        isB2B: currentUser?.isB2B || false,
         itens: cart,
         total: cartTotal,
         metodoPagamento: paymentMethod,
@@ -317,34 +397,154 @@ export default function App() {
     }
   };
 
-  // Abre o Modal de Detalhes
   const openProductDetails = (product: any) => {
     setSelectedProduct(product);
     setModalQuantity(1);
   };
 
+  // Opção 4: Interface Visual do Registo / Login
   const renderLogin = () => (
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#F4F9F8] p-6">
-      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md text-center border border-[#8ECAC5]/20">
-        <div className="w-16 h-16 bg-[#E8F3F2] text-[#8ECAC5] rounded-full flex items-center justify-center mx-auto mb-4">
-          <SparklesIcon size={32} />
+      <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md border border-[#8ECAC5]/25">
+        <div className="text-center mb-6">
+          <div className="w-16 h-16 bg-[#E8F3F2] text-[#8ECAC5] rounded-full flex items-center justify-center mx-auto mb-3">
+            <SparklesIcon size={32} />
+          </div>
+          <h1 className="text-3xl font-extrabold text-[#8ECAC5] tracking-wide">GKL BRASIL</h1>
+          <p className="text-[#698F8A] font-bold tracking-widest uppercase text-xs">Distribuidora</p>
         </div>
-        <h1 className="text-3xl font-bold text-[#8ECAC5] tracking-wide mb-1">GKL BRASIL</h1>
-        <p className="text-[#698F8A] font-semibold tracking-widest uppercase text-sm mb-8">Distribuidora</p>
-        
-        <div className="space-y-4">
-          <button 
-            onClick={() => handleLogin('normal')}
-            className="w-full flex items-center justify-center gap-2 bg-[#4A6B64] text-white py-3 rounded-xl hover:bg-[#3A5A53] transition shadow-md"
+
+        {/* Separador de Abas de Autenticação */}
+        <div className="flex bg-[#F4F9F8] rounded-xl p-1 mb-6 border border-[#E8F3F2]">
+          <button
+            onClick={() => setActiveAuthTab('login')}
+            className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all ${
+              activeAuthTab === 'login'
+                ? 'bg-[#4A6B64] text-white shadow-sm'
+                : 'text-[#698F8A] hover:text-[#4A6B64]'
+            }`}
           >
-            <UserIcon size={20} /> Entrar como Cliente Padrão
+            Entrar
           </button>
-          
-          <button 
-            onClick={() => handleLogin('b2b')}
-            className="w-full flex items-center justify-center gap-2 bg-[#8ECAC5] text-white py-3 rounded-xl hover:bg-[#7ABDB8] transition shadow-md"
+          <button
+            onClick={() => setActiveAuthTab('register')}
+            className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all ${
+              activeAuthTab === 'register'
+                ? 'bg-[#4A6B64] text-white shadow-sm'
+                : 'text-[#698F8A] hover:text-[#4A6B64]'
+            }`}
           >
-            <FileTextIcon size={20} /> Entrar como Lojista (Faturado)
+            Criar Conta
+          </button>
+        </div>
+
+        <form onSubmit={handleAuthSubmit} className="space-y-4">
+          {activeAuthTab === 'register' && (
+            <>
+              <div>
+                <label className="block text-xs font-bold text-[#4A6B64] uppercase mb-1">Nome Completo / Razão Social</label>
+                <input
+                  type="text"
+                  placeholder="Seu nome ou nome da empresa"
+                  value={authName}
+                  onChange={(e) => setAuthFormName(e.target.value)}
+                  className="w-full bg-[#F4F9F8] text-[#4A6B64] border border-[#E8F3F2] rounded-xl py-3 px-4 outline-none focus:ring-2 focus:ring-[#8ECAC5] transition"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#4A6B64] uppercase mb-1">CNPJ / CPF / NIF</label>
+                <input
+                  type="text"
+                  placeholder="Introduza o número de identificação"
+                  value={authNIF}
+                  onChange={(e) => setAuthFormNif(e.target.value)}
+                  className="w-full bg-[#F4F9F8] text-[#4A6B64] border border-[#E8F3F2] rounded-xl py-3 px-4 outline-none focus:ring-2 focus:ring-[#8ECAC5] transition"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#4A6B64] uppercase mb-1">Perfil do Cliente</label>
+                <div className="grid grid-cols-2 gap-3 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setAuthFormClientType('normal')}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all ${
+                      authClientType === 'normal'
+                        ? 'border-[#4A6B64] bg-[#E8F3F2] text-[#4A6B64]'
+                        : 'border-[#E8F3F2] text-[#698F8A] bg-white'
+                    }`}
+                  >
+                    Cliente Padrão
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuthFormClientType('b2b')}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all ${
+                      authClientType === 'b2b'
+                        ? 'border-[#8ECAC5] bg-[#F4F9F8] text-[#4A6B64]'
+                        : 'border-[#E8F3F2] text-[#698F8A] bg-white'
+                    }`}
+                  >
+                    Lojista B2B (Faturado)
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+
+          <div>
+            <label className="block text-xs font-bold text-[#4A6B64] uppercase mb-1">Endereço de Email</label>
+            <input
+              type="email"
+              placeholder="exemplo@gkl.com"
+              value={authEmail}
+              onChange={(e) => setAuthFormEmail(e.target.value)}
+              className="w-full bg-[#F4F9F8] text-[#4A6B64] border border-[#E8F3F2] rounded-xl py-3 px-4 outline-none focus:ring-2 focus:ring-[#8ECAC5] transition"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-[#4A6B64] uppercase mb-1">Palavra-passe</label>
+            <input
+              type="password"
+              placeholder="••••••••"
+              value={authPassword}
+              onChange={(e) => setAuthFormPassword(e.target.value)}
+              className="w-full bg-[#F4F9F8] text-[#4A6B64] border border-[#E8F3F2] rounded-xl py-3 px-4 outline-none focus:ring-2 focus:ring-[#8ECAC5] transition"
+              required
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="w-full bg-[#4A6B64] hover:bg-[#3A5A53] text-white py-3.5 rounded-xl font-bold transition shadow-md mt-4 active:scale-95"
+          >
+            {activeAuthTab === 'register' ? 'Efetuar Registo' : 'Iniciar Sessão'}
+          </button>
+        </form>
+
+        <div className="relative my-6">
+          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-[#E8F3F2]"></div></div>
+          <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-3 text-[#698F8A] font-bold">Ou Acesso Rápido</span></div>
+        </div>
+
+        {/* Links rápidos originais para testes */}
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => handleLogin('normal')}
+            className="flex items-center justify-center gap-1.5 bg-[#E8F3F2] hover:bg-[#D4EAE7] text-[#4A6B64] py-2.5 px-2 rounded-xl text-xs font-bold transition"
+          >
+            <UserIcon size={14} /> Cliente Teste
+          </button>
+          <button
+            onClick={() => handleLogin('b2b')}
+            className="flex items-center justify-center gap-1.5 bg-[#F4F9F8] hover:bg-[#E8F3F2] text-[#8ECAC5] py-2.5 px-2 rounded-xl text-xs font-bold border border-[#8ECAC5]/30 transition"
+          >
+            <FileTextIcon size={14} /> Lojista Teste
           </button>
         </div>
       </div>
@@ -352,16 +552,13 @@ export default function App() {
   );
 
   const renderCatalog = () => {
-    // Extrai categorias únicas dinamicamente para alimentar o Filtro Rápido (Opção 1)
     const uniqueCategories = ['Todas', ...Array.from(new Set(dbProducts.map(p => p.category).filter(Boolean)))];
 
     const filteredProducts = dbProducts.filter(p => {
       const nameMatch = p.name ? p.name.toLowerCase().includes(searchQuery.toLowerCase()) : false;
       const categorySearchMatch = p.category ? p.category.toLowerCase().includes(searchQuery.toLowerCase()) : false;
       const textMatch = nameMatch || categorySearchMatch;
-
       const categoryFilterMatch = selectedCategory === 'Todas' || p.category === selectedCategory;
-
       return textMatch && categoryFilterMatch;
     });
 
@@ -381,7 +578,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* Opção 1: Filtro Rápido de Categorias (Carrossel Horizontal) */}
+        {/* Filtro Rápido de Categorias (Carrossel Horizontal) */}
         <div className="max-w-6xl mx-auto px-4 mb-6">
           <div className="flex gap-2 overflow-x-auto py-2 scrollbar-none">
             {uniqueCategories.map(cat => (
@@ -435,7 +632,7 @@ export default function App() {
                     <span className="text-xl font-bold text-[#8ECAC5]">R$ {formatPrice(product.price)}</span>
                     <button 
                       onClick={(e) => {
-                        e.stopPropagation(); // Evita abrir o modal ao clicar direto no carrinho
+                        e.stopPropagation(); 
                         addToCart(product, 1);
                       }}
                       className="bg-[#4A6B64] text-white p-2.5 rounded-xl hover:bg-[#8ECAC5] transition shadow-sm hover:scale-110 duration-300"
@@ -589,12 +786,97 @@ export default function App() {
       <p className="text-[#698F8A] mb-8 max-w-md">
         Seu pedido foi enviado para o nosso sistema e já está na fila da expedição.
       </p>
-      <button 
-        onClick={() => setCurrentScreen('catalog')}
-        className="bg-[#4A6B64] text-white px-8 py-3 rounded-xl font-bold hover:bg-[#3A5A53] transition shadow-lg"
-      >
-        Fazer novo pedido
-      </button>
+      <div className="flex flex-col sm:flex-row gap-3 justify-center">
+        <button 
+          onClick={() => setCurrentScreen('catalog')}
+          className="bg-[#4A6B64] text-white px-8 py-3 rounded-xl font-bold hover:bg-[#3A5A53] transition shadow-lg"
+        >
+          Fazer novo pedido
+        </button>
+        <button 
+          onClick={() => setCurrentScreen('orders')}
+          className="bg-white border border-[#4A6B64] text-[#4A6B64] px-8 py-3 rounded-xl font-bold hover:bg-[#E8F3F2] transition shadow-sm"
+        >
+          Ver meus pedidos
+        </button>
+      </div>
+    </div>
+  );
+
+  // Opção 3: Ecrã de Histórico de Pedidos Realizados ("Meus Pedidos")
+  const renderOrders = () => (
+    <div className="max-w-4xl mx-auto px-4 py-8 pb-24">
+      <div className="flex items-center gap-4 mb-6">
+        <button onClick={() => setCurrentScreen('catalog')} className="p-2 hover:bg-[#E8F3F2] text-[#4A6B64] rounded-full transition">
+          <ArrowLeftIcon size={24} />
+        </button>
+        <h2 className="text-2xl font-bold text-[#4A6B64]">Meus Pedidos</h2>
+      </div>
+
+      {myOrders.length === 0 ? (
+        <div className="text-center py-12 bg-white rounded-2xl shadow-sm border border-[#E8F3F2]">
+          <ClipboardIcon size={48} className="mx-auto text-[#8ECAC5]/50 mb-4" />
+          <p className="text-[#698F8A]">Nenhum pedido efetuado até ao momento.</p>
+          <button 
+            onClick={() => setCurrentScreen('catalog')}
+            className="mt-4 text-[#8ECAC5] font-bold hover:underline"
+          >
+            Começar a Comprar
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {myOrders.map((order) => (
+            <div key={order.id} className="bg-white rounded-2xl shadow-sm p-6 border border-[#E8F3F2] hover:border-[#8ECAC5]/30 transition-all duration-300">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#F4F9F8] pb-4 mb-4 gap-2">
+                <div>
+                  <span className="text-xs font-bold text-[#698F8A] uppercase tracking-wider block">ID do Pedido</span>
+                  <span className="text-sm font-mono text-[#4A6B64] font-bold">{order.id}</span>
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-[#698F8A] uppercase tracking-wider block text-left sm:text-right">Data</span>
+                  <span className="text-sm text-[#4A6B64]">
+                    {order.dataCriacao ? new Date(order.dataCriacao).toLocaleDateString('pt-PT', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    }) : 'Sem data'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-[#698F8A] uppercase tracking-wider block text-left sm:text-right font-bold">Status</span>
+                  <span className="inline-block bg-[#E8F3F2] text-[#4A6B64] text-xs font-extrabold px-3 py-1 rounded-full mt-0.5">
+                    {order.status || 'Autorizado'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Itens do Pedido */}
+              <div className="space-y-2 mb-4">
+                {order.itens && Array.isArray(order.itens) ? order.itens.map((item: any, idx: number) => (
+                  <div key={idx} className="flex justify-between text-sm text-[#4A6B64]">
+                    <span>{item.name} <strong className="text-[#8ECAC5]">x{item.quantity}</strong></span>
+                    <span>R$ {formatPrice(Number(item.price || 0) * item.quantity)}</span>
+                  </div>
+                )) : null}
+              </div>
+
+              <div className="flex justify-between items-center pt-4 border-t border-[#F4F9F8]">
+                <div>
+                  <span className="text-xs text-[#698F8A] block">Pagamento</span>
+                  <span className="text-xs font-bold uppercase text-[#4A6B64]">{order.metodoPagamento?.replace('_', ' ') || 'Não especificado'}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs text-[#698F8A] block">Total</span>
+                  <span className="text-xl font-black text-[#8ECAC5]">R$ {formatPrice(order.total)}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 
@@ -616,6 +898,15 @@ export default function App() {
                 Olá, <span className="font-bold text-[#4A6B64]">{currentUser.name}</span>
                 {currentUser.isB2B && <div className="text-xs font-semibold text-[#8ECAC5]">Limite: R$ {formatPrice(currentUser.creditLimit)}</div>}
               </div>
+
+              {/* Botão de Histórico de Pedidos (Opção 3) */}
+              <button 
+                onClick={() => setCurrentScreen('orders')}
+                className={`p-2 rounded-full transition ${currentScreen === 'orders' ? 'bg-[#E8F3F2] text-[#4A6B64]' : 'hover:bg-[#E8F3F2] text-[#698F8A]'}`}
+                title="Meus Pedidos"
+              >
+                <ClipboardIcon size={22} />
+              </button>
               
               <button 
                 onClick={() => setCurrentScreen('cart')}
@@ -642,6 +933,7 @@ export default function App() {
       {currentScreen === 'cart' && renderCart()}
       {currentScreen === 'checkout' && renderCheckout()}
       {currentScreen === 'success' && renderSuccess()}
+      {currentScreen === 'orders' && renderOrders()}
 
       {/* Opção 2: Ecrã de Detalhes do Produto - Modal Flutuante */}
       {selectedProduct && (
