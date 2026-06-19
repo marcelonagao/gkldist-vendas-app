@@ -84,9 +84,9 @@ const customConfig = {
   appId: "1:791567747101:web:e59cecf699c8715e30def4"
 };
 
-// Sanitiza o app_id removendo barras para evitar erros de segmentos no Firestore
+// Extrai corretamente apenas o primeiro segmento do app_id para respeitar as regras de segurança do Firestore
 const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'gkl-distribuidora';
-const appId = rawAppId.replace(/\//g, '_');
+const appId = rawAppId.split('/')[0];
 
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : customConfig;
 const isFirebaseConfigured = firebaseConfig.apiKey && firebaseConfig.apiKey !== "SUA_API_KEY";
@@ -107,6 +107,12 @@ const PRODUCTS_FALLBACK = [
 const MOCK_USERS = {
   normal: { id: 'u1', name: 'João Silva', isB2B: false, creditLimit: 0 },
   b2b: { id: 'u2', name: 'Lojista Beta', isB2B: true, creditLimit: 5000.00 }
+};
+
+// --- FUNÇÃO DE AUXÍLIO: FORMATA PREÇOS COM SEGURANÇA (Previne travamentos) ---
+const formatPrice = (value: any): string => {
+  const num = Number(value);
+  return isNaN(num) ? '0.00' : num.toFixed(2);
 };
 
 export default function App() {
@@ -136,7 +142,7 @@ export default function App() {
         }
         await signInAnonymously(auth);
       } catch (error) {
-        console.error("Erro completo na autenticação do Firebase:", error);
+        console.error("Erro na autenticação do Firebase:", error);
       }
     };
     initAuth();
@@ -182,7 +188,8 @@ export default function App() {
     setCart((prevCart) => prevCart.filter(item => item.id !== productId));
   };
 
-  const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  // Garante que o cálculo do carrinho trate os preços com segurança
+  const cartTotal = cart.reduce((sum, item) => sum + (Number(item.price || 0) * item.quantity), 0);
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   const handleLogin = (userType: 'normal' | 'b2b') => {
@@ -299,7 +306,7 @@ export default function App() {
                   <h3 className="text-lg font-bold text-[#4A6B64]">{product.name}</h3>
                   <p className="text-sm text-[#698F8A] mb-4">Estoque: {product.stock} un</p>
                   <div className="mt-auto flex items-center justify-between">
-                    <span className="text-xl font-bold text-[#8ECAC5]">R$ {product.price.toFixed(2)}</span>
+                    <span className="text-xl font-bold text-[#8ECAC5]">R$ {formatPrice(product.price)}</span>
                     <button 
                       onClick={() => addToCart(product)}
                       className="bg-[#4A6B64] text-white p-2 rounded-lg hover:bg-[#8ECAC5] transition shadow-sm"
@@ -343,10 +350,10 @@ export default function App() {
               <img src={item.image} alt={item.name} className="w-16 h-16 object-cover rounded-lg mr-4 border border-[#F4F9F8]" />
               <div className="flex-1">
                 <h3 className="font-bold text-[#4A6B64]">{item.name}</h3>
-                <p className="text-[#698F8A] text-sm">R$ {item.price.toFixed(2)} x {item.quantity}</p>
+                <p className="text-[#698F8A] text-sm">R$ {formatPrice(item.price)} x {item.quantity}</p>
               </div>
               <div className="text-right">
-                <p className="font-bold text-[#4A6B64]">R$ {(item.price * item.quantity).toFixed(2)}</p>
+                <p className="font-bold text-[#4A6B64]">R$ {formatPrice(item.price * item.quantity)}</p>
                 <button 
                   onClick={() => removeFromCart(item.id)}
                   className="text-red-400 text-sm font-semibold mt-1 hover:underline"
@@ -360,7 +367,7 @@ export default function App() {
           <div className="bg-[#4A6B64] text-white p-6 rounded-2xl mt-8 shadow-lg">
             <div className="flex justify-between items-center mb-6">
               <span className="text-lg text-[#E8F3F2]">Total do Pedido</span>
-              <span className="text-3xl font-bold text-[#8ECAC5]">R$ {cartTotal.toFixed(2)}</span>
+              <span className="text-3xl font-bold text-[#8ECAC5]">R$ {formatPrice(cartTotal)}</span>
             </div>
             <button 
               onClick={() => setCurrentScreen('checkout')}
@@ -388,11 +395,11 @@ export default function App() {
 
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-[#E8F3F2] mb-6">
           <h3 className="font-bold text-[#698F8A] mb-2">Resumo</h3>
-          <p className="text-[#4A6B64]">Valor total a pagar: <strong className="text-2xl ml-2 text-[#8ECAC5]">R$ {cartTotal.toFixed(2)}</strong></p>
+          <p className="text-[#4A6B64]">Valor total a pagar: <strong className="text-2xl ml-2 text-[#8ECAC5]">R$ {formatPrice(cartTotal)}</strong></p>
           
           {currentUser?.isB2B && (
             <div className={`mt-4 p-4 rounded-xl text-sm border ${canUseCredit ? 'bg-[#E8F3F2] border-[#8ECAC5] text-[#4A6B64]' : 'bg-red-50 border-red-200 text-red-800'}`}>
-              <strong className="text-base">Seu Limite B2B: R$ {currentUser.creditLimit.toFixed(2)}</strong>
+              <strong className="text-base">Seu Limite B2B: R$ {formatPrice(currentUser.creditLimit)}</strong>
               {!canUseCredit && <p className="mt-1">O valor do pedido excede seu limite de crédito aprovado.</p>}
             </div>
           )}
@@ -478,7 +485,7 @@ export default function App() {
             <div className="flex items-center gap-6">
               <div className="text-sm text-right hidden sm:block text-[#698F8A]">
                 Olá, <span className="font-bold text-[#4A6B64]">{currentUser.name}</span>
-                {currentUser.isB2B && <div className="text-xs font-semibold text-[#8ECAC5]">Limite: R$ {currentUser.creditLimit.toFixed(2)}</div>}
+                {currentUser.isB2B && <div className="text-xs font-semibold text-[#8ECAC5]">Limite: R$ {formatPrice(currentUser.creditLimit)}</div>}
               </div>
               
               <button 
