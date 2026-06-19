@@ -128,6 +128,11 @@ const PRODUCTS_FALLBACK = [
   { id: 6, name: 'Kit Lixa de Unha (100 un)', category: 'Acessórios', price: 15.00, stock: 30, image: 'https://images.unsplash.com/photo-1522337660859-02fbefca4702?auto=format&fit=crop&q=80&w=400' },
 ];
 
+const MOCK_USERS = {
+  normal: { id: 'u1', name: 'João Silva', isB2B: false, creditLimit: 0 },
+  b2b: { id: 'u2', name: 'Lojista Beta', isB2B: true, creditLimit: 5000.00 }
+};
+
 // --- FUNÇÃO AUXILIAR: TRADUZ E ADAPTA CAMPOS DO PORTUGUÊS E CORRIGE VÍRGULAS ---
 const normalizeProduct = (docId: string, data: any) => {
   const getFieldValue = (keys: string[]) => {
