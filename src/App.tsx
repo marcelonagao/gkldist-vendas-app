@@ -127,6 +127,17 @@ const UsersIcon = ({ size = 24, className = "" }: { size?: number; className?: s
   </svg>
 );
 
+const ListIcon = ({ size = 24, className = "" }: { size?: number; className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <line x1="8" y1="6" x2="21" y2="6"></line>
+    <line x1="8" y1="12" x2="21" y2="12"></line>
+    <line x1="8" y1="18" x2="21" y2="18"></line>
+    <line x1="3" y1="6" x2="3.01" y2="6"></line>
+    <line x1="3" y1="12" x2="3.01" y2="12"></line>
+    <line x1="3" y1="18" x2="3.01" y2="18"></line>
+  </svg>
+);
+
 // ============================================================================
 // CONFIGURAÇÕES DO FIREBASE
 // ============================================================================
@@ -213,7 +224,7 @@ const formatPrice = (value: any): string => {
 };
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState('login'); // login, catalog, cart, checkout, success, orders, admin, rep_dashboard
+  const [currentScreen, setCurrentScreen] = useState('login'); 
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [cart, setCart] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -222,8 +233,12 @@ export default function App() {
   const [modalQuantity, setModalQuantity] = useState(1);
   const [myOrders, setMyOrders] = useState<any[]>([]);
 
-  // NOVO: Estado para armazenar o cliente que o Representante está a atender
+  // Estado para armazenar o cliente que o Representante está a atender
   const [selectedClientForRep, setSelectedClientForRep] = useState<any>(null);
+
+  // Estados de Abas para Painéis de Gestão
+  const [adminTab, setAdminTab] = useState<'clientes' | 'pedidos'>('clientes');
+  const [repTab, setRepTab] = useState<'clientes' | 'pedidos'>('clientes');
 
   const [activeAuthTab, setActiveAuthTab] = useState<'login' | 'register'>('login');
   const [authEmail, setAuthFormEmail] = useState('');
@@ -311,21 +326,36 @@ export default function App() {
     }
   }, [dbClients, currentUser]);
 
+  // NOVO: Busca Centralizada de Pedidos (Filtrada em memória de acordo com o perfil)
   useEffect(() => {
-    if (!isFirebaseConfigured || !firebaseUser) return;
+    if (!isFirebaseConfigured || !firebaseUser || !currentUser) return;
 
-    // Determina o ID alvo para ler os pedidos (Cliente Logado ou Cliente atendido pelo Representante)
-    const targetUserId = currentUser?.isRep && selectedClientForRep ? selectedClientForRep.id : firebaseUser.uid;
-
+    // Lemos todos os pedidos da coleção global pública para permitir visão gerencial
     const orderPath = typeof __app_id !== 'undefined'
-      ? collection(db, 'artifacts', appId, 'users', targetUserId, 'pedidos')
+      ? collection(db, 'artifacts', appId, 'public', 'data', 'pedidos')
       : collection(db, 'pedidos');
 
     const unsubscribe = onSnapshot(orderPath, (snapshot) => {
-      const fetchedOrders = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      let fetchedOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // Filtragem por Perfil de Acesso (RBAC Simulado)
+      if (currentUser.isAdmin) {
+        // Admin vê todos os pedidos
+      } else if (currentUser.isRep) {
+        // Se o representante selecionou um cliente, vê os pedidos desse cliente
+        if (selectedClientForRep) {
+          fetchedOrders = fetchedOrders.filter((o: any) => o.clienteId === selectedClientForRep.id);
+        } else {
+          // No Dashboard, o representante vê todos os pedidos da sua carteira
+          fetchedOrders = fetchedOrders.filter((o: any) => o.vendedorId === currentUser.id);
+        }
+      } else {
+        // Cliente Normal vê apenas os seus próprios pedidos
+        const clientId = currentUser.id || firebaseUser.uid;
+        fetchedOrders = fetchedOrders.filter((o: any) => o.clienteId === clientId);
+      }
+
+      // Ordena por data decrescente
       fetchedOrders.sort((a: any, b: any) => {
         return new Date(b.dataCriacao || 0).getTime() - new Date(a.dataCriacao || 0).getTime();
       });
@@ -359,8 +389,10 @@ export default function App() {
   const handleLogin = (userType: 'b2b_approved' | 'b2b_novato' | 'admin' | 'rep') => {
     setCurrentUser(MOCK_USERS[userType]);
     if (userType === 'admin') {
+      setAdminTab('clientes');
       setCurrentScreen('admin');
     } else if (userType === 'rep') {
+      setRepTab('clientes');
       setCurrentScreen('rep_dashboard');
     } else {
       setCurrentScreen('catalog');
@@ -459,20 +491,20 @@ export default function App() {
     }
 
     try {
-      // Se for representante, guarda o pedido na pasta do cliente selecionado
       const targetClient = currentUser.isRep ? selectedClientForRep : currentUser;
       const targetClientId = targetClient?.id || firebaseUser.uid;
 
+      // NOVO: Pedidos são gravados numa coleção global para visão gerencial e de representante
       const orderPath = typeof __app_id !== 'undefined'
-        ? collection(db, 'artifacts', appId, 'users', targetClientId, 'pedidos')
+        ? collection(db, 'artifacts', appId, 'public', 'data', 'pedidos')
         : collection(db, 'pedidos');
 
       await addDoc(orderPath, {
         clienteId: targetClientId,
         clienteNome: targetClient?.name || 'Cliente GKL',
         isB2B: targetClient?.isB2B || false,
-        vendedorId: currentUser.isRep ? currentUser.id : null,     // Rastreamento para comissão do Bling
-        vendedorNome: currentUser.isRep ? currentUser.name : null, // Rastreamento para comissão do Bling
+        vendedorId: currentUser.isRep ? currentUser.id : null,     
+        vendedorNome: currentUser.isRep ? currentUser.name : null, 
         itens: cart,
         total: cartTotal,
         metodoPagamento: paymentMethod,
@@ -498,11 +530,14 @@ export default function App() {
         ? doc(db, 'artifacts', appId, 'public', 'data', 'clientes', clientId)
         : doc(db, 'clientes', clientId);
 
+      // NOVO: Quando o gestor aprova, atribui automaticamente ao Carlos Vendedor (Simulação B2B)
       await updateDoc(clientDocRef, {
         status: 'aprovado',
-        creditLimit: 5000.00
+        creditLimit: 5000.00,
+        vendedorId: 'rep_1',
+        vendedorNome: 'Carlos Vendedor'
       });
-      alert("Crédito de R$ 5.000,00 aprovado e libertado com sucesso!");
+      alert("Crédito de R$ 5.000,00 aprovado e cliente atribuído ao representante!");
     } catch (error) {
       console.error("Erro ao aprovar crédito:", error);
       alert("Erro ao aprovar cliente. Verifique as permissões.");
@@ -630,7 +665,6 @@ export default function App() {
             <AlertCircleIcon size={14} /> Entrar como Loja Nova (Progresso 0/3)
           </button>
 
-          {/* NOVO: Acesso Rápido para Representante */}
           <button
             onClick={() => handleLogin('rep')}
             className="w-full flex items-center justify-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 py-2.5 px-4 rounded-xl text-xs font-bold border border-indigo-200 transition"
@@ -649,77 +683,145 @@ export default function App() {
     </div>
   );
 
-  // NOVO: Renderiza a tela de Dashboard do Representante de Vendas
+  // NOVO: Painel do Representante com Abas (Clientes e Pedidos)
   const renderRepDashboard = () => {
-    // Filtra para exibir a lista de clientes para o representante atender
-    const filteredClients = dbClients.filter(c => 
+    // Carteira restrita ao vendedor logado (ou clientes sem vendedor para testes)
+    const myClients = dbClients.filter(c => c.vendedorId === currentUser.id || !c.vendedorId);
+    
+    const filteredClients = myClients.filter(c => 
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
       c.nif.includes(searchQuery)
     );
 
     return (
       <div className="max-w-5xl mx-auto px-4 py-8 pb-24">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-3xl font-extrabold text-[#4A6B64] flex items-center gap-3">
               <BriefcaseIcon size={32} />
-              Carteira de Clientes
+              Portal do Representante
             </h2>
-            <p className="text-[#698F8A] mt-1">Selecione o lojista para iniciar um novo pedido de venda.</p>
+            <p className="text-[#698F8A] mt-1">Gerencie a sua carteira e acompanhe as suas vendas.</p>
           </div>
         </div>
 
-        <div className="bg-white p-4 shadow-sm rounded-2xl mb-6 border border-[#8ECAC5]/20">
-          <div className="relative w-full">
-            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-[#698F8A]" size={20} />
-            <input 
-              type="text" 
-              placeholder="Pesquisar lojista por Razão Social ou CNPJ..." 
-              className="w-full bg-[#F4F9F8] text-[#4A6B64] rounded-xl py-3 pl-10 pr-4 outline-none focus:ring-2 focus:ring-[#8ECAC5] transition border border-transparent focus:border-[#8ECAC5]"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
+        <div className="flex bg-[#F4F9F8] rounded-xl p-1 mb-8 border border-[#E8F3F2] max-w-md">
+          <button
+            onClick={() => setRepTab('clientes')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all ${
+              repTab === 'clientes' ? 'bg-[#4A6B64] text-white shadow-sm' : 'text-[#698F8A] hover:text-[#4A6B64]'
+            }`}
+          >
+            <UsersIcon size={16} /> Carteira de Clientes
+          </button>
+          <button
+            onClick={() => setRepTab('pedidos')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all ${
+              repTab === 'pedidos' ? 'bg-[#4A6B64] text-white shadow-sm' : 'text-[#698F8A] hover:text-[#4A6B64]'
+            }`}
+          >
+            <ListIcon size={16} /> Meus Pedidos ({myOrders.length})
+          </button>
         </div>
 
-        {dbClients.length === 0 ? (
-          <div className="bg-white p-8 rounded-2xl shadow-sm text-center border border-[#E8F3F2]">
-            <UsersIcon size={48} className="mx-auto text-[#8ECAC5]/50 mb-4" />
-            <p className="text-[#698F8A]">Nenhum cliente na sua carteira.</p>
-          </div>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            {filteredClients.map(client => (
-              <div key={client.id} className="bg-white p-6 rounded-2xl shadow-sm border border-[#E8F3F2] hover:border-[#8ECAC5] transition-all group">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h4 className="font-bold text-lg text-[#4A6B64] group-hover:text-[#8ECAC5] transition-colors">{client.name}</h4>
-                    <span className="text-sm text-[#698F8A] block">CNPJ: {client.nif}</span>
-                  </div>
-                  {client.status === 'aprovado' || client.creditLimit > 0 ? (
-                    <span className="bg-[#E8F3F2] text-[#4A6B64] text-xs font-extrabold px-3 py-1 rounded-full">Crédito Aprovado</span>
-                  ) : (
-                    <span className="bg-yellow-50 text-yellow-700 border border-yellow-200 text-xs font-extrabold px-3 py-1 rounded-full">À Vista (PIX/Cartão)</span>
-                  )}
-                </div>
-                
-                <div className="flex justify-between items-end mt-4 pt-4 border-t border-[#F4F9F8]">
-                  <div>
-                    <span className="text-xs text-[#698F8A] block">Limite Disponível</span>
-                    <span className="font-bold text-[#8ECAC5]">R$ {formatPrice(client.creditLimit)}</span>
-                  </div>
-                  <button 
-                    onClick={() => {
-                      setSelectedClientForRep(client);
-                      setCurrentScreen('catalog');
-                    }}
-                    className="bg-[#4A6B64] hover:bg-[#3A5A53] text-white px-5 py-2.5 rounded-xl font-bold shadow-sm transition-all active:scale-95 text-sm"
-                  >
-                    Iniciar Pedido
-                  </button>
-                </div>
+        {repTab === 'clientes' && (
+          <>
+            <div className="bg-white p-4 shadow-sm rounded-2xl mb-6 border border-[#8ECAC5]/20">
+              <div className="relative w-full">
+                <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-[#698F8A]" size={20} />
+                <input 
+                  type="text" 
+                  placeholder="Pesquisar na sua carteira..." 
+                  className="w-full bg-[#F4F9F8] text-[#4A6B64] rounded-xl py-3 pl-10 pr-4 outline-none focus:ring-2 focus:ring-[#8ECAC5] transition border border-transparent focus:border-[#8ECAC5]"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
               </div>
-            ))}
+            </div>
+
+            {myClients.length === 0 ? (
+              <div className="bg-white p-8 rounded-2xl shadow-sm text-center border border-[#E8F3F2]">
+                <UsersIcon size={48} className="mx-auto text-[#8ECAC5]/50 mb-4" />
+                <p className="text-[#698F8A]">Nenhum cliente atribuído à sua carteira.</p>
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2">
+                {filteredClients.map(client => (
+                  <div key={client.id} className="bg-white p-6 rounded-2xl shadow-sm border border-[#E8F3F2] hover:border-[#8ECAC5] transition-all group">
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <h4 className="font-bold text-lg text-[#4A6B64] group-hover:text-[#8ECAC5] transition-colors">{client.name}</h4>
+                        <span className="text-sm text-[#698F8A] block">CNPJ: {client.nif}</span>
+                      </div>
+                      {client.status === 'aprovado' || client.creditLimit > 0 ? (
+                        <span className="bg-[#E8F3F2] text-[#4A6B64] text-xs font-extrabold px-3 py-1 rounded-full">Crédito Aprovado</span>
+                      ) : (
+                        <span className="bg-yellow-50 text-yellow-700 border border-yellow-200 text-xs font-extrabold px-3 py-1 rounded-full">À Vista (PIX/Cartão)</span>
+                      )}
+                    </div>
+                    
+                    <div className="flex justify-between items-end mt-4 pt-4 border-t border-[#F4F9F8]">
+                      <div>
+                        <span className="text-xs text-[#698F8A] block">Limite Disponível</span>
+                        <span className="font-bold text-[#8ECAC5]">R$ {formatPrice(client.creditLimit)}</span>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          setSelectedClientForRep(client);
+                          setCurrentScreen('catalog');
+                        }}
+                        className="bg-[#4A6B64] hover:bg-[#3A5A53] text-white px-5 py-2.5 rounded-xl font-bold shadow-sm transition-all active:scale-95 text-sm"
+                      >
+                        Iniciar Pedido
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {repTab === 'pedidos' && (
+          <div className="space-y-4">
+            {myOrders.length === 0 ? (
+              <div className="bg-white p-8 rounded-2xl shadow-sm text-center border border-[#E8F3F2]">
+                <ClipboardIcon size={48} className="mx-auto text-[#8ECAC5]/50 mb-4" />
+                <p className="text-[#698F8A]">Nenhum pedido efetuado pelos seus clientes.</p>
+              </div>
+            ) : (
+              myOrders.map((order) => (
+                <div key={order.id} className="bg-white rounded-2xl shadow-sm p-6 border border-[#E8F3F2]">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#F4F9F8] pb-4 mb-4 gap-2">
+                    <div>
+                      <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider block">Cliente</span>
+                      <span className="text-base text-[#4A6B64] font-bold">{order.clienteNome}</span>
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-[#698F8A] uppercase tracking-wider block text-left sm:text-right">Data</span>
+                      <span className="text-sm text-[#4A6B64]">
+                        {order.dataCriacao ? new Date(order.dataCriacao).toLocaleDateString('pt-PT') : 'Sem data'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="inline-block bg-[#E8F3F2] text-[#4A6B64] text-xs font-extrabold px-3 py-1 rounded-full">
+                        {order.status || 'Autorizado'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="text-xs text-[#698F8A] block">ID do Pedido</span>
+                      <span className="text-xs font-mono text-[#4A6B64] font-bold">{order.id}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs text-[#698F8A] block">Total</span>
+                      <span className="text-xl font-black text-[#8ECAC5]">R$ {formatPrice(order.total)}</span>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         )}
       </div>
@@ -1018,7 +1120,6 @@ export default function App() {
         >
           Fazer novo pedido
         </button>
-        {/* Representante volta para a carteira de clientes */}
         {currentUser?.isRep ? (
            <button 
              onClick={() => {
@@ -1119,82 +1220,150 @@ export default function App() {
     </div>
   );
 
+  // NOVO: Painel Administrativo do Gestor com Abas
   const renderAdmin = () => {
     const pendingClients = dbClients.filter(c => c.status === 'pendente');
     const approvedClients = dbClients.filter(c => c.status === 'aprovado' || c.creditLimit > 0);
 
     return (
       <div className="max-w-5xl mx-auto px-4 py-8 pb-24">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-3xl font-extrabold text-[#4A6B64] flex items-center gap-3">
               <ShieldIcon size={32} />
               Painel de Gestão GKL
             </h2>
-            <p className="text-[#698F8A] mt-1">Gerencie solicitações de crédito e clientes B2B.</p>
+            <p className="text-[#698F8A] mt-1">Visão global e gestão de parceiros B2B.</p>
           </div>
         </div>
 
-        {dbClients.length === 0 ? (
-          <div className="bg-white p-8 rounded-2xl shadow-sm text-center border border-[#E8F3F2]">
-            <p className="text-[#698F8A]">Nenhum cliente cadastrado no Firebase ainda.</p>
-            <p className="text-sm mt-2 text-[#4A6B64]">Dica: Crie uma conta na tela de login para ver os dados aparecerem aqui.</p>
-          </div>
-        ) : (
-          <div className="space-y-8">
-            <div>
-              <h3 className="text-xl font-bold text-yellow-700 mb-4 flex items-center gap-2">
-                <AlertCircleIcon size={24} /> 
-                Aguardando Aprovação Financeira ({pendingClients.length})
-              </h3>
-              
-              {pendingClients.length === 0 ? (
-                <div className="bg-yellow-50 p-6 rounded-2xl border border-yellow-100 text-yellow-700 text-sm font-semibold">
-                  Tudo limpo! Não há nenhuma solicitação pendente no momento.
+        <div className="flex bg-[#F4F9F8] rounded-xl p-1 mb-8 border border-[#E8F3F2] max-w-md">
+          <button
+            onClick={() => setAdminTab('clientes')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all ${
+              adminTab === 'clientes' ? 'bg-[#4A6B64] text-white shadow-sm' : 'text-[#698F8A] hover:text-[#4A6B64]'
+            }`}
+          >
+            <UsersIcon size={16} /> Gestão de Clientes
+          </button>
+          <button
+            onClick={() => setAdminTab('pedidos')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all ${
+              adminTab === 'pedidos' ? 'bg-[#4A6B64] text-white shadow-sm' : 'text-[#698F8A] hover:text-[#4A6B64]'
+            }`}
+          >
+            <ListIcon size={16} /> Todos os Pedidos ({myOrders.length})
+          </button>
+        </div>
+
+        {adminTab === 'clientes' && (
+          <>
+            {dbClients.length === 0 ? (
+              <div className="bg-white p-8 rounded-2xl shadow-sm text-center border border-[#E8F3F2]">
+                <p className="text-[#698F8A]">Nenhum cliente cadastrado no Firebase ainda.</p>
+                <p className="text-sm mt-2 text-[#4A6B64]">Dica: Crie uma conta na tela de login para ver os dados aparecerem aqui.</p>
+              </div>
+            ) : (
+              <div className="space-y-8">
+                <div>
+                  <h3 className="text-xl font-bold text-yellow-700 mb-4 flex items-center gap-2">
+                    <AlertCircleIcon size={24} /> 
+                    Aguardando Aprovação Financeira ({pendingClients.length})
+                  </h3>
+                  
+                  {pendingClients.length === 0 ? (
+                    <div className="bg-yellow-50 p-6 rounded-2xl border border-yellow-100 text-yellow-700 text-sm font-semibold">
+                      Tudo limpo! Não há nenhuma solicitação pendente no momento.
+                    </div>
+                  ) : (
+                    <div className="grid gap-4">
+                      {pendingClients.map(client => (
+                        <div key={client.id} className="bg-white p-6 rounded-2xl shadow-sm border-l-4 border-yellow-400 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                          <div>
+                            <h4 className="font-bold text-lg text-[#4A6B64]">{client.name}</h4>
+                            <div className="flex gap-4 mt-1 text-sm text-[#698F8A]">
+                              <span><strong>CNPJ:</strong> {client.nif}</span>
+                              <span><strong>Email:</strong> {client.email}</span>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => handleApproveCredit(client.id)}
+                            className="bg-[#8ECAC5] hover:bg-[#7ABDB8] text-white px-6 py-3 rounded-xl font-bold shadow-md transition-all active:scale-95"
+                          >
+                            Aprovar R$ 5.000,00
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="grid gap-4">
-                  {pendingClients.map(client => (
-                    <div key={client.id} className="bg-white p-6 rounded-2xl shadow-sm border-l-4 border-yellow-400 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      <div>
-                        <h4 className="font-bold text-lg text-[#4A6B64]">{client.name}</h4>
-                        <div className="flex gap-4 mt-1 text-sm text-[#698F8A]">
-                          <span><strong>CNPJ:</strong> {client.nif}</span>
-                          <span><strong>Email:</strong> {client.email}</span>
+
+                <div>
+                  <h3 className="text-xl font-bold text-[#4A6B64] mb-4 flex items-center gap-2">
+                    <CheckCircleIcon size={24} /> 
+                    Lojistas Aprovados ({approvedClients.length})
+                  </h3>
+                  <div className="grid gap-4">
+                    {approvedClients.map(client => (
+                      <div key={client.id} className="bg-white p-4 rounded-xl shadow-sm border border-[#E8F3F2] flex justify-between items-center opacity-80">
+                        <div>
+                          <h4 className="font-bold text-[#4A6B64]">{client.name}</h4>
+                          <span className="text-xs text-[#698F8A]">CNPJ: {client.nif} {client.vendedorNome && `• Rep: ${client.vendedorNome}`}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-xs text-[#698F8A] block">Limite Aprovado</span>
+                          <span className="font-bold text-[#8ECAC5]">R$ {formatPrice(client.creditLimit)}</span>
                         </div>
                       </div>
-                      <button 
-                        onClick={() => handleApproveCredit(client.id)}
-                        className="bg-[#8ECAC5] hover:bg-[#7ABDB8] text-white px-6 py-3 rounded-xl font-bold shadow-md transition-all active:scale-95"
-                      >
-                        Aprovar R$ 5.000,00
-                      </button>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+          </>
+        )}
 
-            <div>
-              <h3 className="text-xl font-bold text-[#4A6B64] mb-4 flex items-center gap-2">
-                <CheckCircleIcon size={24} /> 
-                Lojistas Aprovados ({approvedClients.length})
-              </h3>
-              <div className="grid gap-4">
-                {approvedClients.map(client => (
-                  <div key={client.id} className="bg-white p-4 rounded-xl shadow-sm border border-[#E8F3F2] flex justify-between items-center opacity-80">
+        {adminTab === 'pedidos' && (
+          <div className="space-y-4">
+            {myOrders.length === 0 ? (
+              <div className="bg-white p-8 rounded-2xl shadow-sm text-center border border-[#E8F3F2]">
+                <ClipboardIcon size={48} className="mx-auto text-[#8ECAC5]/50 mb-4" />
+                <p className="text-[#698F8A]">Nenhum pedido efetuado no sistema ainda.</p>
+              </div>
+            ) : (
+              myOrders.map((order) => (
+                <div key={order.id} className="bg-white rounded-2xl shadow-sm p-6 border border-[#E8F3F2]">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#F4F9F8] pb-4 mb-4 gap-2">
                     <div>
-                      <h4 className="font-bold text-[#4A6B64]">{client.name}</h4>
-                      <span className="text-xs text-[#698F8A]">CNPJ: {client.nif}</span>
+                      <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider block">Cliente</span>
+                      <span className="text-base text-[#4A6B64] font-bold">{order.clienteNome}</span>
+                      {order.vendedorNome && <span className="text-xs text-[#698F8A] ml-2">• Via Rep. {order.vendedorNome}</span>}
                     </div>
-                    <div className="text-right">
-                      <span className="text-xs text-[#698F8A] block">Limite Aprovado</span>
-                      <span className="font-bold text-[#8ECAC5]">R$ {formatPrice(client.creditLimit)}</span>
+                    <div>
+                      <span className="text-xs font-bold text-[#698F8A] uppercase tracking-wider block text-left sm:text-right">Data</span>
+                      <span className="text-sm text-[#4A6B64]">
+                        {order.dataCriacao ? new Date(order.dataCriacao).toLocaleDateString('pt-PT', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'}) : 'Sem data'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="inline-block bg-[#E8F3F2] text-[#4A6B64] text-xs font-extrabold px-3 py-1 rounded-full mt-0.5">
+                        {order.status || 'Autorizado'}
+                      </span>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="text-xs text-[#698F8A] block">Método</span>
+                      <span className="text-xs uppercase font-bold text-[#4A6B64]">{order.metodoPagamento?.replace('_', ' ') || 'Não especificado'}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs text-[#698F8A] block">Total</span>
+                      <span className="text-xl font-black text-[#8ECAC5]">R$ {formatPrice(order.total)}</span>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         )}
       </div>
@@ -1267,7 +1436,6 @@ export default function App() {
                 </>
               )}
 
-              {/* Botão para Representante trocar de cliente ativamente */}
               {currentUser.isRep && selectedClientForRep && currentScreen !== 'rep_dashboard' && (
                  <button 
                    onClick={() => {
