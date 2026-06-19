@@ -91,6 +91,14 @@ const ClipboardIcon = ({ size = 24, className = "" }: { size?: number; className
   </svg>
 );
 
+const AlertCircleIcon = ({ size = 24, className = "" }: { size?: number; className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <circle cx="12" cy="12" r="10" />
+    <line x1="12" y1="8" x2="12" y2="12" />
+    <line x1="12" y1="16" x2="12.01" y2="16" />
+  </svg>
+);
+
 // ============================================================================
 // CONFIGURAÇÕES DO FIREBASE
 // ============================================================================
@@ -120,7 +128,8 @@ const PRODUCTS_FALLBACK = [
 ];
 
 const MOCK_USERS = {
-  b2b: { id: 'u2', name: 'Lojista Beta', isB2B: true, creditLimit: 5000.00 }
+  b2b_approved: { id: 'u2', name: 'Lojista Beta', isB2B: true, creditLimit: 5000.00, status: 'aprovado' },
+  b2b_pending: { id: 'u3', name: 'Nova Loja (Em Análise)', isB2B: true, creditLimit: 0.00, status: 'pendente' }
 };
 
 // --- FUNÇÃO AUXILIAR: TRADUZ E ADAPTA CAMPOS DO PORTUGUÊS E CORRIGE VÍRGULAS ---
@@ -183,12 +192,11 @@ export default function App() {
   const [modalQuantity, setModalQuantity] = useState(1);
   const [myOrders, setMyOrders] = useState<any[]>([]);
 
-  // Opção 4: Estado do Formulário focado 100% no B2B (Lojistas)
   const [activeAuthTab, setActiveAuthTab] = useState<'login' | 'register'>('login');
   const [authEmail, setAuthFormEmail] = useState('');
   const [authPassword, setAuthFormPassword] = useState('');
-  const [authName, setAuthFormName] = useState(''); // Agora será Razão Social
-  const [authNIF, setAuthFormNif] = useState('');   // Agora será CNPJ
+  const [authName, setAuthFormName] = useState(''); // Razão Social
+  const [authNIF, setAuthFormNif] = useState('');   // CNPJ
 
   const [firebaseUser, setFirebaseUser] = useState<any>(null);
   const [dbProducts, setDbProducts] = useState<any[]>([]);
@@ -285,12 +293,11 @@ export default function App() {
   const cartTotal = cart.reduce((sum, item) => sum + (Number(item.price || 0) * item.quantity), 0);
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  const handleLogin = (userType: 'b2b') => {
+  const handleLogin = (userType: 'b2b_approved' | 'b2b_pending') => {
     setCurrentUser(MOCK_USERS[userType]);
     setCurrentScreen('catalog');
   };
 
-  // Registo totalmente focado em B2B (Lojistas)
   const handleAuthSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (activeAuthTab === 'register') {
@@ -298,28 +305,33 @@ export default function App() {
         alert("Por favor, preencha todos os campos para efetuar o registo.");
         return;
       }
+      // NOVO FLUXO DE REGISTO: O utilizador entra sempre como PENDENTE e limite 0
       const newUser = {
         id: 'u_' + Math.random().toString(36).substring(2, 9),
         name: authName, // Razão Social
         email: authEmail,
-        isB2B: true, // Forçado para true nesta fase
-        creditLimit: 5000.00, // Limite aprovado simulado para testes
+        isB2B: true, 
+        creditLimit: 0.00, // Limite zera até aprovação
+        status: 'pendente', // NOVO STATUS
         nif: authNIF // CNPJ
       };
       setCurrentUser(newUser);
-      alert(`Cadastro B2B criado com sucesso! Bem-vindo(a) à GKL, ${authName}.`);
+      alert(`Cadastro solicitado! O seu CNPJ passará por uma rápida análise de crédito. Até lá, pode comprar à vista.`);
       setCurrentScreen('catalog');
     } else {
       if (!authEmail || !authPassword) {
         alert("Por favor, introduza o seu Email e Palavra-passe.");
         return;
       }
+      // Simulação: Se o email conter "pendente", loga como pendente
+      const isPending = authEmail.includes('pendente');
       const loggedUser = {
         id: 'u_logged',
-        name: 'Lojista Registrado',
+        name: isPending ? 'Loja Nova (Em análise)' : 'Lojista Aprovado',
         email: authEmail,
         isB2B: true,
-        creditLimit: 5000.00
+        creditLimit: isPending ? 0.00 : 5000.00,
+        status: isPending ? 'pendente' : 'aprovado'
       };
       setCurrentUser(loggedUser);
       setCurrentScreen('catalog');
@@ -392,7 +404,6 @@ export default function App() {
           <p className="text-[#8ECAC5] text-sm font-semibold bg-[#E8F3F2] inline-block px-3 py-1 rounded-full">Acesso Exclusivo B2B</p>
         </div>
 
-        {/* Separador de Abas de Autenticação */}
         <div className="flex bg-[#F4F9F8] rounded-xl p-1 mb-6 border border-[#E8F3F2]">
           <button
             onClick={() => setActiveAuthTab('login')}
@@ -482,13 +493,21 @@ export default function App() {
           <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-3 text-[#698F8A] font-bold">Acesso para Testes</span></div>
         </div>
 
-        {/* Link rápido B2B para testes */}
-        <button
-          onClick={() => handleLogin('b2b')}
-          className="w-full flex items-center justify-center gap-1.5 bg-[#F4F9F8] hover:bg-[#E8F3F2] text-[#8ECAC5] py-3 px-4 rounded-xl text-sm font-bold border border-[#8ECAC5]/30 transition"
-        >
-          <FileTextIcon size={16} /> Entrar com Lojista de Teste (Faturado)
-        </button>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={() => handleLogin('b2b_approved')}
+            className="w-full flex items-center justify-center gap-1.5 bg-[#F4F9F8] hover:bg-[#E8F3F2] text-[#8ECAC5] py-2.5 px-4 rounded-xl text-xs font-bold border border-[#8ECAC5]/30 transition"
+          >
+            <FileTextIcon size={14} /> Entrar com Lojista Aprovado (Com Crédito)
+          </button>
+          
+          <button
+            onClick={() => handleLogin('b2b_pending')}
+            className="w-full flex items-center justify-center gap-1.5 bg-yellow-50 hover:bg-yellow-100 text-yellow-700 py-2.5 px-4 rounded-xl text-xs font-bold border border-yellow-200 transition"
+          >
+            <AlertCircleIcon size={14} /> Entrar como Recém-Registrado (Em Análise)
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -504,8 +523,20 @@ export default function App() {
       return textMatch && categoryFilterMatch;
     });
 
+    const isPending = currentUser?.status === 'pendente';
+
     return (
       <div className="pb-24">
+        {/* Aviso de Cadastro Pendente */}
+        {isPending && (
+          <div className="bg-yellow-50 border-b border-yellow-200 p-3 text-center">
+            <p className="text-yellow-800 text-sm font-semibold flex items-center justify-center gap-2">
+              <AlertCircleIcon size={16} />
+              Seu cadastro está em análise de crédito. Até a aprovação, as compras só podem ser feitas à vista (PIX ou Cartão).
+            </p>
+          </div>
+        )}
+
         {/* Barra de Busca */}
         <div className="bg-white p-4 shadow-sm sticky top-16 z-10 mb-2 border-b border-[#8ECAC5]/20">
           <div className="relative max-w-3xl mx-auto">
@@ -520,7 +551,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* Filtro Rápido de Categorias (Carrossel Horizontal) */}
+        {/* Filtro Rápido de Categorias */}
         <div className="max-w-6xl mx-auto px-4 mb-6">
           <div className="flex gap-2 overflow-x-auto py-2 scrollbar-none">
             {uniqueCategories.map(cat => (
@@ -650,7 +681,9 @@ export default function App() {
   );
 
   const renderCheckout = () => {
-    const canUseCredit = currentUser?.isB2B && currentUser?.creditLimit >= cartTotal;
+    const isPending = currentUser?.status === 'pendente';
+    // Só pode usar crédito se for B2B, tiver limite e NÃO estiver pendente de aprovação
+    const canUseCredit = currentUser?.isB2B && currentUser?.creditLimit >= cartTotal && !isPending;
 
     return (
       <div className="max-w-3xl mx-auto px-4 py-8 pb-24">
@@ -667,8 +700,12 @@ export default function App() {
           
           {currentUser?.isB2B && (
             <div className={`mt-4 p-4 rounded-xl text-sm border ${canUseCredit ? 'bg-[#E8F3F2] border-[#8ECAC5] text-[#4A6B64]' : 'bg-red-50 border-red-200 text-red-800'}`}>
-              <strong className="text-base">Seu Limite B2B: R$ {formatPrice(currentUser.creditLimit)}</strong>
-              {!canUseCredit && <p className="mt-1">O valor do pedido excede seu limite de crédito aprovado.</p>}
+              <strong className="text-base">Seu Limite B2B Faturado: R$ {formatPrice(currentUser.creditLimit)}</strong>
+              {isPending ? (
+                <p className="mt-1 font-semibold flex items-center gap-1"><AlertCircleIcon size={14}/> Crédito bloqueado. Cadastro em análise comercial.</p>
+              ) : !canUseCredit ? (
+                <p className="mt-1">O valor do pedido excede seu limite de crédito aprovado.</p>
+              ) : null}
             </div>
           )}
         </div>
@@ -676,20 +713,28 @@ export default function App() {
         <h3 className="font-bold text-[#4A6B64] mb-4 ml-2">Escolha a forma de pagamento:</h3>
         
         <div className="space-y-3">
-          {canUseCredit && (
-             <button 
-              onClick={() => handleFinalizeOrder('boleto_faturado')}
-              className="w-full flex items-center justify-between p-4 bg-[#F4F9F8] border-2 border-[#8ECAC5] rounded-xl hover:bg-[#E8F3F2] transition text-left shadow-sm"
-            >
-              <div className="flex items-center gap-4">
-                <div className="bg-[#8ECAC5] p-3 rounded-xl text-white"><FileTextIcon size={24} /></div>
-                <div>
-                  <h4 className="font-bold text-[#4A6B64] text-lg">Boleto Faturado (30/60/90)</h4>
-                  <p className="text-[#698F8A] text-sm">Utilizar limite de crédito aprovado.</p>
-                </div>
+          {/* Opção Faturada só aparece se aprovada ou se quiser mostrar desativada para visualização */}
+          <button 
+            onClick={() => {
+              if (canUseCredit) handleFinalizeOrder('boleto_faturado');
+            }}
+            disabled={!canUseCredit}
+            className={`w-full flex items-center justify-between p-4 rounded-xl transition text-left shadow-sm border-2 ${
+              canUseCredit 
+                ? 'bg-[#F4F9F8] border-[#8ECAC5] hover:bg-[#E8F3F2] cursor-pointer' 
+                : 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed'
+            }`}
+          >
+            <div className="flex items-center gap-4">
+              <div className={`${canUseCredit ? 'bg-[#8ECAC5]' : 'bg-gray-300'} p-3 rounded-xl text-white`}><FileTextIcon size={24} /></div>
+              <div>
+                <h4 className={`font-bold text-lg ${canUseCredit ? 'text-[#4A6B64]' : 'text-gray-500'}`}>Boleto Faturado (30/60/90)</h4>
+                <p className={`text-sm ${canUseCredit ? 'text-[#698F8A]' : 'text-gray-400'}`}>
+                  {isPending ? 'Indisponível. Cadastro em análise.' : 'Utilizar limite de crédito aprovado.'}
+                </p>
               </div>
-            </button>
-          )}
+            </div>
+          </button>
 
           <button 
             onClick={() => handleFinalizeOrder('pix')}
@@ -837,7 +882,11 @@ export default function App() {
             <div className="flex items-center gap-6">
               <div className="text-sm text-right hidden sm:block text-[#698F8A]">
                 Olá, <span className="font-bold text-[#4A6B64]">{currentUser.name}</span>
-                {currentUser.isB2B && <div className="text-xs font-semibold text-[#8ECAC5]">Limite: R$ {formatPrice(currentUser.creditLimit)}</div>}
+                {currentUser.isB2B && (
+                  <div className="text-xs font-semibold text-[#8ECAC5]">
+                    {currentUser.status === 'pendente' ? 'Conta em Análise' : `Limite: R$ ${formatPrice(currentUser.creditLimit)}`}
+                  </div>
+                )}
               </div>
 
               <button 
@@ -875,7 +924,7 @@ export default function App() {
       {currentScreen === 'success' && renderSuccess()}
       {currentScreen === 'orders' && renderOrders()}
 
-      {/* Opção 2: Ecrã de Detalhes do Produto - Modal Flutuante */}
+      {/* Modal Flutuante */}
       {selectedProduct && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300">
           <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto md:overflow-hidden shadow-2xl relative animate-in fade-in zoom-in-95 duration-200 flex flex-col md:flex-row border border-[#8ECAC5]/10">
