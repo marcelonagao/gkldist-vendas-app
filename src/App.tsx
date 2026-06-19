@@ -97,13 +97,6 @@ const ClipboardIcon = ({ size = 24, className = "" }: { size?: number; className
   </svg>
 );
 
-const LockIcon = ({ size = 20, className = "" }: { size?: number; className?: string }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-  </svg>
-);
-
 // ============================================================================
 // CONFIGURAÇÕES DO FIREBASE
 // ============================================================================
@@ -307,6 +300,12 @@ export default function App() {
 
   const cartTotal = cart.reduce((sum, item) => sum + (Number(item.price || 0) * item.quantity), 0);
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+  // Função auxiliar de login rápido (Acesso Rápido)
+  const handleLogin = (userType: 'normal' | 'b2b') => {
+    setCurrentUser(MOCK_USERS[userType]);
+    setCurrentScreen('catalog');
+  };
 
   // Opção 4: Registo e Autenticação de Utilizadores
   const handleAuthSubmit = (e: React.FormEvent) => {
