@@ -84,7 +84,6 @@ const customConfig = {
   appId: "1:791567747101:web:e59cecf699c8715e30def4"
 };
 
-// Extrai corretamente apenas o primeiro segmento do app_id para respeitar as regras de segurança do Firestore
 const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'gkl-distribuidora';
 const appId = rawAppId.split('/')[0];
 
@@ -109,7 +108,47 @@ const MOCK_USERS = {
   b2b: { id: 'u2', name: 'Lojista Beta', isB2B: true, creditLimit: 5000.00 }
 };
 
-// --- FUNÇÃO DE AUXÍLIO: FORMATA PREÇOS COM SEGURANÇA (Previne travamentos) ---
+// --- FUNÇÃO AUXILIAR: TRADUZ E ADAPTA CAMPOS DO PORTUGUÊS E CORRIGE VÍRGULAS ---
+const normalizeProduct = (docId: string, data: any) => {
+  const getFieldValue = (keys: string[]) => {
+    for (const key of keys) {
+      if (data[key] !== undefined) return data[key];
+      const lowerKey = key.toLowerCase();
+      const foundKey = Object.keys(data).find(k => k.toLowerCase() === lowerKey);
+      if (foundKey !== undefined) return data[foundKey];
+    }
+    return undefined;
+  };
+
+  const name = getFieldValue(['name', 'nome', 'titulo', 'title']) || 'Produto sem Nome';
+  const category = getFieldValue(['category', 'categoria']) || '';
+  const image = getFieldValue(['image', 'imagem', 'foto', 'url', 'link']) || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?auto=format&fit=crop&q=80&w=400';
+  
+  const stockVal = getFieldValue(['stock', 'estoque', 'qtd', 'quantidade']);
+  const stock = stockVal !== undefined ? parseInt(String(stockVal), 10) : 0;
+
+  const priceVal = getFieldValue(['price', 'preco', 'preço', 'valor']);
+  let price = 0;
+  if (priceVal !== undefined && priceVal !== null) {
+    if (typeof priceVal === 'number') {
+      price = priceVal;
+    } else if (typeof priceVal === 'string') {
+      const cleanPrice = priceVal.replace(',', '.').replace(/[^\d.]/g, '');
+      const parsed = parseFloat(cleanPrice);
+      price = isNaN(parsed) ? 0 : parsed;
+    }
+  }
+
+  return {
+    id: docId,
+    name,
+    category,
+    price,
+    stock: isNaN(stock) ? 0 : stock,
+    image
+  };
+};
+
 const formatPrice = (value: any): string => {
   const num = Number(value);
   return isNaN(num) ? '0.00' : num.toFixed(2);
@@ -122,11 +161,11 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
 
   const [firebaseUser, setFirebaseUser] = useState<any>(null);
-  const [dbProducts, setDbProducts] = useState(PRODUCTS_FALLBACK);
+  const [dbProducts, setDbProducts] = useState<any[]>([]);
 
   useEffect(() => {
     if (!isFirebaseConfigured) {
-      console.warn("Chaves do Firebase não configuradas. Funcionando em modo de simulação visual.");
+      setDbProducts(PRODUCTS_FALLBACK);
       return;
     }
 
@@ -137,7 +176,7 @@ export default function App() {
             await signInWithCustomToken(auth, __initial_auth_token);
             return;
           } catch (tokenError) {
-            console.warn("Falha no login por token customizado, tentando login anônimo de fallback:", tokenError);
+            console.warn("Falha no login por token customizado, tentando login anônimo:", tokenError);
           }
         }
         await signInAnonymously(auth);
@@ -154,19 +193,25 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!isFirebaseConfigured || !firebaseUser) return;
+    if (!isFirebaseConfigured || !firebaseUser) {
+      setDbProducts(PRODUCTS_FALLBACK);
+      return;
+    }
     
     const path = typeof __app_id !== 'undefined' 
       ? collection(db, 'artifacts', appId, 'public', 'data', 'produtos')
       : collection(db, 'produtos'); 
       
     const unsubscribe = onSnapshot(path, (snapshot) => {
-      const fetchedProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const fetchedProducts = snapshot.docs.map(doc => normalizeProduct(doc.id, doc.data()));
       if (fetchedProducts.length > 0) {
-        setDbProducts(fetchedProducts as any);
+        setDbProducts(fetchedProducts);
+      } else {
+        setDbProducts(PRODUCTS_FALLBACK);
       }
     }, (error) => {
       console.error("Aviso do Firestore:", error);
+      setDbProducts(PRODUCTS_FALLBACK);
     });
     
     return () => unsubscribe();
@@ -188,7 +233,6 @@ export default function App() {
     setCart((prevCart) => prevCart.filter(item => item.id !== productId));
   };
 
-  // Garante que o cálculo do carrinho trate os preços com segurança
   const cartTotal = cart.reduce((sum, item) => sum + (Number(item.price || 0) * item.quantity), 0);
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -205,8 +249,7 @@ export default function App() {
 
   const handleFinalizeOrder = async (paymentMethod: string) => {
     if (!isFirebaseConfigured) {
-      alert("Modo de Simulação: Como as chaves do Firebase não foram colocadas, o pedido será apenas simulado na tela e não irá para o banco de dados.");
-      console.log("Pedido simulado finalizado!", { cart, total: cartTotal, paymentMethod });
+      alert("Modo de Simulação: Como as chaves do Firebase não foram colocadas, o pedido será apenas simulado na tela.");
       setCart([]); 
       setCurrentScreen('success');
       return;
@@ -233,7 +276,6 @@ export default function App() {
         dataCriacao: new Date().toISOString()
       });
 
-      console.log("Pedido guardado no Firebase com sucesso!");
       setCart([]); 
       setCurrentScreen('success');
     } catch (error) {
@@ -271,7 +313,6 @@ export default function App() {
   );
 
   const renderCatalog = () => {
-    // Garante que a pesquisa é segura mesmo se algum campo de nome ou categoria estiver ausente do Firebase
     const filteredProducts = dbProducts.filter(p => {
       const nameMatch = p.name ? p.name.toLowerCase().includes(searchQuery.toLowerCase()) : false;
       const categoryMatch = p.category ? p.category.toLowerCase().includes(searchQuery.toLowerCase()) : false;
@@ -300,7 +341,6 @@ export default function App() {
               <div key={product.id} className="bg-white rounded-2xl shadow-sm overflow-hidden flex flex-col border border-[#E8F3F2] hover:shadow-md transition hover:border-[#8ECAC5]/50">
                 <div className="h-48 overflow-hidden bg-[#F4F9F8] relative">
                   <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
-                  {/* Só exibe o distintivo (badge) se a categoria existir na base de dados para evitar elementos vazios */}
                   {product.category && (
                     <span className="absolute top-3 right-3 bg-white/90 text-[#4A6B64] text-xs font-semibold px-3 py-1 rounded-full shadow-sm">
                       {product.category}
