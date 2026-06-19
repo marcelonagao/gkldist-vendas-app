@@ -91,6 +91,12 @@ const ClipboardIcon = ({ size = 24, className = "" }: { size?: number; className
   </svg>
 );
 
+const TargetIcon = ({ size = 24, className = "" }: { size?: number; className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>
+  </svg>
+);
+
 const AlertCircleIcon = ({ size = 24, className = "" }: { size?: number; className?: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <circle cx="12" cy="12" r="10" />
@@ -128,8 +134,8 @@ const PRODUCTS_FALLBACK = [
 ];
 
 const MOCK_USERS = {
-  b2b_approved: { id: 'u2', name: 'Lojista Beta', isB2B: true, creditLimit: 5000.00, status: 'aprovado' },
-  b2b_pending: { id: 'u3', name: 'Nova Loja (Em Análise)', isB2B: true, creditLimit: 0.00, status: 'pendente' }
+  b2b_approved: { id: 'u2', name: 'Lojista Beta (Antigo)', isB2B: true, creditLimit: 5000.00, status: 'aprovado' },
+  b2b_novato: { id: 'u3', name: 'Nova Loja (Novo)', isB2B: true, creditLimit: 0.00, status: 'novato' }
 };
 
 // --- FUNÇÃO AUXILIAR: TRADUZ E ADAPTA CAMPOS DO PORTUGUÊS E CORRIGE VÍRGULAS ---
@@ -293,7 +299,7 @@ export default function App() {
   const cartTotal = cart.reduce((sum, item) => sum + (Number(item.price || 0) * item.quantity), 0);
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  const handleLogin = (userType: 'b2b_approved' | 'b2b_pending') => {
+  const handleLogin = (userType: 'b2b_approved' | 'b2b_novato') => {
     setCurrentUser(MOCK_USERS[userType]);
     setCurrentScreen('catalog');
   };
@@ -305,33 +311,33 @@ export default function App() {
         alert("Por favor, preencha todos os campos para efetuar o registo.");
         return;
       }
-      // NOVO FLUXO DE REGISTO: O utilizador entra sempre como PENDENTE e limite 0
+      // NOVO FLUXO: Cliente novato entra com zero crédito até cumprir meta.
       const newUser = {
         id: 'u_' + Math.random().toString(36).substring(2, 9),
-        name: authName, // Razão Social
+        name: authName,
         email: authEmail,
         isB2B: true, 
-        creditLimit: 0.00, // Limite zera até aprovação
-        status: 'pendente', // NOVO STATUS
-        nif: authNIF // CNPJ
+        creditLimit: 0.00,
+        status: 'novato',
+        nif: authNIF
       };
       setCurrentUser(newUser);
-      alert(`Cadastro solicitado! O seu CNPJ passará por uma rápida análise de crédito. Até lá, pode comprar à vista.`);
+      alert(`Cadastro criado com sucesso! Faça 3 compras à vista para desbloquear o Boleto Faturado.`);
       setCurrentScreen('catalog');
     } else {
       if (!authEmail || !authPassword) {
         alert("Por favor, introduza o seu Email e Palavra-passe.");
         return;
       }
-      // Simulação: Se o email conter "pendente", loga como pendente
-      const isPending = authEmail.includes('pendente');
+      // Simulação para o preview
+      const isNovato = authEmail.includes('novo');
       const loggedUser = {
         id: 'u_logged',
-        name: isPending ? 'Loja Nova (Em análise)' : 'Lojista Aprovado',
+        name: isNovato ? 'Loja Nova (Sem histórico)' : 'Lojista Aprovado',
         email: authEmail,
         isB2B: true,
-        creditLimit: isPending ? 0.00 : 5000.00,
-        status: isPending ? 'pendente' : 'aprovado'
+        creditLimit: isNovato ? 0.00 : 5000.00,
+        status: isNovato ? 'novato' : 'aprovado'
       };
       setCurrentUser(loggedUser);
       setCurrentScreen('catalog');
@@ -484,7 +490,7 @@ export default function App() {
             type="submit"
             className="w-full bg-[#4A6B64] hover:bg-[#3A5A53] text-white py-3.5 rounded-xl font-bold transition shadow-md mt-4 active:scale-95"
           >
-            {activeAuthTab === 'register' ? 'Solicitar Cadastro' : 'Acessar Catálogo'}
+            {activeAuthTab === 'register' ? 'Criar Conta' : 'Acessar Catálogo'}
           </button>
         </form>
 
@@ -498,14 +504,14 @@ export default function App() {
             onClick={() => handleLogin('b2b_approved')}
             className="w-full flex items-center justify-center gap-1.5 bg-[#F4F9F8] hover:bg-[#E8F3F2] text-[#8ECAC5] py-2.5 px-4 rounded-xl text-xs font-bold border border-[#8ECAC5]/30 transition"
           >
-            <FileTextIcon size={14} /> Entrar com Lojista Aprovado (Com Crédito)
+            <FileTextIcon size={14} /> Entrar com Lojista Antigo (Crédito Aprovado)
           </button>
           
           <button
-            onClick={() => handleLogin('b2b_pending')}
+            onClick={() => handleLogin('b2b_novato')}
             className="w-full flex items-center justify-center gap-1.5 bg-yellow-50 hover:bg-yellow-100 text-yellow-700 py-2.5 px-4 rounded-xl text-xs font-bold border border-yellow-200 transition"
           >
-            <AlertCircleIcon size={14} /> Entrar como Recém-Registrado (Em Análise)
+            <AlertCircleIcon size={14} /> Entrar como Loja Nova (Progresso 0/3)
           </button>
         </div>
       </div>
@@ -523,21 +529,43 @@ export default function App() {
       return textMatch && categoryFilterMatch;
     });
 
-    const isPending = currentUser?.status === 'pendente';
+    // LÓGICA DE PROGRESSÃO E GAMIFICAÇÃO
+    const targetOrders = 3;
+    const currentOrders = myOrders.length;
+    const remainingOrders = Math.max(0, targetOrders - currentOrders);
+    const progressPercent = Math.min(100, (currentOrders / targetOrders) * 100);
+    const hasReachedTarget = currentOrders >= targetOrders;
+    
+    // Verifica se já tem limite (aprovado)
+    const isApproved = currentUser?.creditLimit > 0;
 
     return (
       <div className="pb-24">
-        {/* Aviso de Cadastro Pendente */}
-        {isPending && (
-          <div className="bg-yellow-50 border-b border-yellow-200 p-3 text-center">
-            <p className="text-yellow-800 text-sm font-semibold flex items-center justify-center gap-2">
-              <AlertCircleIcon size={16} />
-              Seu cadastro está em análise de crédito. Até a aprovação, as compras só podem ser feitas à vista (PIX ou Cartão).
-            </p>
+        {/* Barra de Progresso Inteligente (Apenas para lojistas sem crédito) */}
+        {!isApproved && currentUser && (
+          <div className={`p-4 border-b ${hasReachedTarget ? 'bg-[#E8F3F2] border-[#8ECAC5]' : 'bg-yellow-50 border-yellow-200'}`}>
+            <div className="max-w-6xl mx-auto">
+              <div className="flex items-center gap-3 mb-2">
+                {hasReachedTarget ? <CheckCircleIcon size={20} className="text-[#4A6B64]" /> : <TargetIcon size={20} className="text-yellow-700" />}
+                <p className={`text-sm font-bold ${hasReachedTarget ? 'text-[#4A6B64]' : 'text-yellow-800'}`}>
+                  {hasReachedTarget 
+                    ? "Meta atingida! O seu CNPJ encontra-se em análise de crédito." 
+                    : `Faltam ${remainingOrders} compra${remainingOrders > 1 ? 's' : ''} à vista para solicitar limite faturado.`}
+                </p>
+              </div>
+              
+              {!hasReachedTarget && (
+                <div className="w-full bg-yellow-200/50 rounded-full h-2.5 mt-2">
+                  <div 
+                    className="bg-yellow-500 h-2.5 rounded-full transition-all duration-1000 ease-out" 
+                    style={{ width: `${progressPercent}%` }}
+                  ></div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
-        {/* Barra de Busca */}
         <div className="bg-white p-4 shadow-sm sticky top-16 z-10 mb-2 border-b border-[#8ECAC5]/20">
           <div className="relative max-w-3xl mx-auto">
             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-[#698F8A]" size={20} />
@@ -551,7 +579,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Filtro Rápido de Categorias */}
         <div className="max-w-6xl mx-auto px-4 mb-6">
           <div className="flex gap-2 overflow-x-auto py-2 scrollbar-none">
             {uniqueCategories.map(cat => (
@@ -570,7 +597,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Grelha de Produtos */}
         <div className="max-w-6xl mx-auto px-4">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-xl font-bold text-[#4A6B64]">
@@ -681,9 +707,12 @@ export default function App() {
   );
 
   const renderCheckout = () => {
-    const isPending = currentUser?.status === 'pendente';
-    // Só pode usar crédito se for B2B, tiver limite e NÃO estiver pendente de aprovação
-    const canUseCredit = currentUser?.isB2B && currentUser?.creditLimit >= cartTotal && !isPending;
+    const isApproved = currentUser?.creditLimit > 0;
+    const canUseCredit = currentUser?.isB2B && isApproved && currentUser.creditLimit >= cartTotal;
+    
+    // Lógica para mensagem de bloqueio
+    const currentOrders = myOrders.length;
+    const hasReachedTarget = currentOrders >= 3;
 
     return (
       <div className="max-w-3xl mx-auto px-4 py-8 pb-24">
@@ -701,8 +730,11 @@ export default function App() {
           {currentUser?.isB2B && (
             <div className={`mt-4 p-4 rounded-xl text-sm border ${canUseCredit ? 'bg-[#E8F3F2] border-[#8ECAC5] text-[#4A6B64]' : 'bg-red-50 border-red-200 text-red-800'}`}>
               <strong className="text-base">Seu Limite B2B Faturado: R$ {formatPrice(currentUser.creditLimit)}</strong>
-              {isPending ? (
-                <p className="mt-1 font-semibold flex items-center gap-1"><AlertCircleIcon size={14}/> Crédito bloqueado. Cadastro em análise comercial.</p>
+              {!isApproved ? (
+                <p className="mt-1 font-semibold flex items-center gap-1">
+                  <AlertCircleIcon size={14}/> 
+                  {hasReachedTarget ? 'Crédito bloqueado. Cadastro em análise comercial.' : `Faltam ${3 - currentOrders} compras para liberar avaliação.`}
+                </p>
               ) : !canUseCredit ? (
                 <p className="mt-1">O valor do pedido excede seu limite de crédito aprovado.</p>
               ) : null}
@@ -713,7 +745,6 @@ export default function App() {
         <h3 className="font-bold text-[#4A6B64] mb-4 ml-2">Escolha a forma de pagamento:</h3>
         
         <div className="space-y-3">
-          {/* Opção Faturada só aparece se aprovada ou se quiser mostrar desativada para visualização */}
           <button 
             onClick={() => {
               if (canUseCredit) handleFinalizeOrder('boleto_faturado');
@@ -730,7 +761,7 @@ export default function App() {
               <div>
                 <h4 className={`font-bold text-lg ${canUseCredit ? 'text-[#4A6B64]' : 'text-gray-500'}`}>Boleto Faturado (30/60/90)</h4>
                 <p className={`text-sm ${canUseCredit ? 'text-[#698F8A]' : 'text-gray-400'}`}>
-                  {isPending ? 'Indisponível. Cadastro em análise.' : 'Utilizar limite de crédito aprovado.'}
+                  {!isApproved ? (hasReachedTarget ? 'Em análise financeira.' : `Exige 3 compras à vista (você tem ${currentOrders}).`) : 'Utilizar limite de crédito aprovado.'}
                 </p>
               </div>
             </div>
@@ -884,7 +915,7 @@ export default function App() {
                 Olá, <span className="font-bold text-[#4A6B64]">{currentUser.name}</span>
                 {currentUser.isB2B && (
                   <div className="text-xs font-semibold text-[#8ECAC5]">
-                    {currentUser.status === 'pendente' ? 'Conta em Análise' : `Limite: R$ ${formatPrice(currentUser.creditLimit)}`}
+                    {currentUser.creditLimit > 0 ? `Limite: R$ ${formatPrice(currentUser.creditLimit)}` : (myOrders.length >= 3 ? 'Conta em Análise' : `Compras: ${myOrders.length}/3`)}
                   </div>
                 )}
               </div>
