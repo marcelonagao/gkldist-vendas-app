@@ -329,7 +329,6 @@ export default function App() {
   useEffect(() => {
     if (!isFirebaseConfigured || !firebaseUser || !currentUser) return;
 
-    // Lemos todos os pedidos da coleção global pública para permitir visão gerencial
     const orderPath = typeof __app_id !== 'undefined'
       ? collection(db, 'artifacts', appId, 'public', 'data', 'pedidos')
       : collection(db, 'pedidos');
@@ -337,24 +336,19 @@ export default function App() {
     const unsubscribe = onSnapshot(orderPath, (snapshot) => {
       let fetchedOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      // Filtragem por Perfil de Acesso (RBAC Simulado)
       if (currentUser.isAdmin) {
         // Admin vê todos os pedidos
       } else if (currentUser.isRep) {
-        // Se o representante selecionou um cliente, vê os pedidos desse cliente
         if (selectedClientForRep) {
           fetchedOrders = fetchedOrders.filter((o: any) => o.clienteId === selectedClientForRep.id);
         } else {
-          // No Dashboard, o representante vê todos os pedidos da sua carteira
           fetchedOrders = fetchedOrders.filter((o: any) => o.vendedorId === currentUser.id);
         }
       } else {
-        // Cliente Normal vê apenas os seus próprios pedidos
         const clientId = currentUser.id || firebaseUser.uid;
         fetchedOrders = fetchedOrders.filter((o: any) => o.clienteId === clientId);
       }
 
-      // Ordena por data decrescente
       fetchedOrders.sort((a: any, b: any) => {
         return new Date(b.dataCriacao || 0).getTime() - new Date(a.dataCriacao || 0).getTime();
       });
@@ -845,7 +839,7 @@ export default function App() {
 
     return (
       <div className="pb-24">
-        {/* Barra de Progresso Inteligente (Apenas para lojistas sem crédito) */}
+        {/* Barra de Progresso Inteligente */}
         {!isApproved && targetClient && !currentUser.isAdmin && (
           <div className={`p-4 border-b ${hasReachedTarget ? 'bg-[#E8F3F2] border-[#8ECAC5]' : 'bg-yellow-50 border-yellow-200'}`}>
             <div className="max-w-6xl mx-auto">
@@ -870,26 +864,26 @@ export default function App() {
           </div>
         )}
 
-        <div className="bg-white p-4 shadow-sm sticky top-16 z-10 mb-2 border-b border-[#8ECAC5]/20">
+        <div className="bg-white p-3 sm:p-4 shadow-sm sticky top-[68px] sm:top-[76px] z-10 mb-2 border-b border-[#8ECAC5]/20">
           <div className="relative max-w-3xl mx-auto">
             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-[#698F8A]" size={20} />
             <input 
               type="text" 
-              placeholder="Buscar produtos, categorias..." 
-              className="w-full bg-[#F4F9F8] text-[#4A6B64] rounded-xl py-3 pl-10 pr-4 outline-none focus:ring-2 focus:ring-[#8ECAC5] transition border border-transparent focus:border-[#8ECAC5]"
+              placeholder="Buscar produtos..." 
+              className="w-full bg-[#F4F9F8] text-[#4A6B64] rounded-xl py-2.5 sm:py-3 pl-10 pr-4 outline-none focus:ring-2 focus:ring-[#8ECAC5] transition border border-transparent focus:border-[#8ECAC5] text-sm sm:text-base"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
         </div>
 
-        <div className="max-w-6xl mx-auto px-4 mb-6">
+        <div className="max-w-6xl mx-auto px-3 sm:px-4 mb-4 sm:mb-6">
           <div className="flex gap-2 overflow-x-auto py-2 scrollbar-none">
             {uniqueCategories.map(cat => (
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
-                className={`px-4 py-2 rounded-full font-semibold text-sm whitespace-nowrap transition-all duration-300 ${
+                className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-full font-semibold text-xs sm:text-sm whitespace-nowrap transition-all duration-300 ${
                   selectedCategory === cat 
                     ? 'bg-[#4A6B64] text-white shadow-md transform scale-105' 
                     : 'bg-white text-[#4A6B64] border border-[#E8F3F2] hover:bg-[#E8F3F2]'
@@ -901,46 +895,55 @@ export default function App() {
           </div>
         </div>
 
-        <div className="max-w-6xl mx-auto px-4">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-bold text-[#4A6B64]">
-              {selectedCategory === 'Todas' ? 'Nosso Catálogo' : selectedCategory}
+        <div className="max-w-6xl mx-auto px-3 sm:px-4">
+          <div className="flex justify-between items-center mb-4 sm:mb-6">
+            <h2 className="text-lg sm:text-xl font-bold text-[#4A6B64]">
+              {selectedCategory === 'Todas' ? 'Catálogo Geral' : selectedCategory}
             </h2>
-            <span className="text-sm text-[#698F8A] font-semibold">{filteredProducts.length} itens encontrados</span>
+            <span className="text-xs sm:text-sm text-[#698F8A] font-semibold">{filteredProducts.length} itens</span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {/* GRID COMPACTA ESTILO MERCADO LIVRE (2 colunas no mobile) */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6">
             {filteredProducts.map(product => (
               <div 
                 key={product.id} 
                 onClick={() => openProductDetails(product)}
-                className="bg-white rounded-2xl shadow-sm overflow-hidden flex flex-col border border-[#E8F3F2] hover:shadow-md transition-all duration-300 hover:border-[#8ECAC5]/50 cursor-pointer group"
+                className="bg-white rounded-xl shadow-sm overflow-hidden flex flex-col border border-[#E8F3F2] hover:shadow-md transition-all duration-300 cursor-pointer group"
               >
-                <div className="h-48 overflow-hidden bg-[#F4F9F8] relative">
+                {/* Imagem do Produto Menor e Contida */}
+                <div className="h-32 sm:h-40 relative p-2 flex justify-center items-center bg-white border-b border-gray-50">
                   <img 
                     src={product.image} 
                     alt={product.name} 
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                    className="max-h-full max-w-full object-contain mix-blend-multiply group-hover:scale-105 transition-transform duration-500" 
                   />
                   {product.category && (
-                    <span className="absolute top-3 right-3 bg-white/90 text-[#4A6B64] text-xs font-semibold px-3 py-1 rounded-full shadow-sm">
+                    <span className="absolute top-2 left-2 bg-[#8ECAC5] text-white text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shadow-sm">
                       {product.category}
                     </span>
                   )}
                 </div>
-                <div className="p-4 flex-1 flex flex-col">
-                  <h3 className="text-lg font-bold text-[#4A6B64] group-hover:text-[#8ECAC5] transition-colors">{product.name}</h3>
-                  <p className="text-sm text-[#698F8A] mb-4">Estoque: {product.stock} un</p>
-                  <div className="mt-auto flex items-center justify-between">
-                    <span className="text-xl font-bold text-[#8ECAC5]">R$ {formatPrice(product.price)}</span>
+                
+                {/* Detalhes Centralizados */}
+                <div className="p-2 sm:p-3 flex-1 flex flex-col items-center text-center">
+                  <h3 className="text-xs sm:text-sm font-semibold text-[#4A6B64] line-clamp-2 min-h-[32px] sm:min-h-[40px] leading-tight mb-1 group-hover:text-[#8ECAC5] transition-colors">
+                    {product.name}
+                  </h3>
+                  <p className="text-[10px] text-[#698F8A] mb-2">Estoque: {product.stock} un</p>
+                  
+                  <div className="mt-auto w-full flex flex-col items-center">
+                    <span className="text-base sm:text-lg font-extrabold text-[#4A6B64] mb-2">
+                      R$ {formatPrice(product.price)}
+                    </span>
                     <button 
                       onClick={(e) => {
                         e.stopPropagation(); 
                         addToCart(product, 1);
                       }}
-                      className="bg-[#4A6B64] text-white p-2.5 rounded-xl hover:bg-[#8ECAC5] transition shadow-sm hover:scale-110 duration-300"
+                      className="w-full bg-[#E8F3F2] text-[#4A6B64] font-bold text-xs sm:text-sm py-1.5 sm:py-2 rounded-lg hover:bg-[#8ECAC5] hover:text-white transition-colors"
                     >
-                      <ShoppingCartIcon size={18} />
+                      Adicionar
                     </button>
                   </div>
                 </div>
@@ -976,16 +979,16 @@ export default function App() {
         <div className="space-y-4">
           {cart.map(item => (
             <div key={item.id} className="flex items-center bg-white p-4 rounded-xl shadow-sm border border-[#E8F3F2]">
-              <img src={item.image} alt={item.name} className="w-16 h-16 object-cover rounded-lg mr-4 border border-[#F4F9F8]" />
+              <img src={item.image} alt={item.name} className="w-16 h-16 object-contain mix-blend-multiply rounded-lg mr-4 border border-[#F4F9F8] p-1 bg-white" />
               <div className="flex-1">
-                <h3 className="font-bold text-[#4A6B64]">{item.name}</h3>
+                <h3 className="font-bold text-[#4A6B64] text-sm sm:text-base line-clamp-1">{item.name}</h3>
                 <p className="text-[#698F8A] text-sm">R$ {formatPrice(item.price)} x {item.quantity}</p>
               </div>
               <div className="text-right">
                 <p className="font-bold text-[#4A6B64]">R$ {formatPrice(item.price * item.quantity)}</p>
                 <button 
                   onClick={() => removeFromCart(item.id)}
-                  className="text-red-400 text-sm font-semibold mt-1 hover:underline"
+                  className="text-red-400 text-xs sm:text-sm font-semibold mt-1 hover:underline"
                 >
                   Remover
                 </button>
@@ -1366,25 +1369,27 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#F4F9F8] font-sans relative">
+      {/* CABEÇALHO CORRIGIDO PARA MOBILE (Textos e margens ajustados) */}
       {currentUser && currentScreen !== 'login' && (
-        <header className="bg-white border-b border-[#8ECAC5]/30 text-[#4A6B64] p-4 sticky top-0 z-20 shadow-sm">
+        <header className="bg-white border-b border-[#8ECAC5]/30 text-[#4A6B64] p-3 sm:p-4 sticky top-0 z-20 shadow-sm">
           <div className="max-w-6xl mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-2" onClick={() => {
+            <div className="flex items-center gap-1.5 sm:gap-2" onClick={() => {
               if (currentUser.isAdmin) return;
               if (currentUser.isRep && !selectedClientForRep) return;
               setCurrentScreen('catalog');
             }} style={{cursor: (currentUser.isAdmin || (currentUser.isRep && !selectedClientForRep)) ? 'default' : 'pointer'}}>
-              <SparklesIcon size={24} className="text-[#8ECAC5]" />
+              <SparklesIcon size={20} className="text-[#8ECAC5] w-5 h-5 sm:w-6 sm:h-6" />
               <div className="flex flex-col">
-                <span className="font-bold text-base sm:text-lg leading-tight text-[#8ECAC5]">GKL BRASIL</span>
-                <span className="text-[8px] sm:text-[10px] font-bold tracking-wider uppercase text-[#698F8A] leading-none">
-                  {currentUser.isAdmin ? 'Painel Administrativo' : currentUser.isRep ? 'Portal do Representante' : 'Distribuidora'}
+                {/* Nome da Marca nunca desaparece agora */}
+                <span className="font-bold text-sm sm:text-lg leading-tight text-[#8ECAC5]">GKL BRASIL</span>
+                <span className="text-[7px] sm:text-[10px] font-bold tracking-wider uppercase text-[#698F8A] leading-none">
+                  {currentUser.isAdmin ? 'Painel Admin' : currentUser.isRep ? 'Portal Rep.' : 'Distribuidora'}
                 </span>
               </div>
             </div>
             
-            <div className="flex items-center gap-6">
-              <div className="text-sm text-right hidden sm:block text-[#698F8A]">
+            <div className="flex items-center gap-2 sm:gap-6">
+              <div className="text-xs text-right hidden md:block text-[#698F8A]">
                 {currentUser.isAdmin ? (
                    <>Olá, <span className="font-bold text-[#4A6B64]">{currentUser.name}</span><div className="text-xs font-semibold text-gray-500">Acesso Nível Gestão</div></>
                 ) : currentUser.isRep ? (
@@ -1410,19 +1415,19 @@ export default function App() {
                 <>
                   <button 
                     onClick={() => setCurrentScreen('orders')}
-                    className={`p-2 rounded-full transition ${currentScreen === 'orders' ? 'bg-[#E8F3F2] text-[#4A6B64]' : 'hover:bg-[#E8F3F2] text-[#698F8A]'}`}
+                    className={`p-1.5 sm:p-2 rounded-full transition ${currentScreen === 'orders' ? 'bg-[#E8F3F2] text-[#4A6B64]' : 'hover:bg-[#E8F3F2] text-[#698F8A]'}`}
                     title="Histórico de Pedidos"
                   >
-                    <ClipboardIcon size={22} />
+                    <ClipboardIcon size={20} className="sm:w-6 sm:h-6" />
                   </button>
                   
                   <button 
                     onClick={() => setCurrentScreen('cart')}
-                    className="relative p-2 hover:bg-[#E8F3F2] rounded-full transition text-[#4A6B64]"
+                    className="relative p-1.5 sm:p-2 hover:bg-[#E8F3F2] rounded-full transition text-[#4A6B64]"
                   >
-                    <ShoppingCartIcon size={24} />
+                    <ShoppingCartIcon size={20} className="sm:w-6 sm:h-6" />
                     {cartItemCount > 0 && (
-                      <span className="absolute -top-1 -right-1 bg-[#8ECAC5] text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full shadow-sm">
+                      <span className="absolute -top-1 -right-1 bg-[#8ECAC5] text-white text-[9px] sm:text-xs font-bold w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center rounded-full shadow-sm">
                         {cartItemCount}
                       </span>
                     )}
@@ -1437,14 +1442,14 @@ export default function App() {
                      setCart([]);
                      setCurrentScreen('rep_dashboard');
                    }}
-                   className="text-xs font-bold text-indigo-400 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition"
+                   className="text-[10px] sm:text-xs font-bold text-indigo-400 bg-indigo-50 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg hover:bg-indigo-100 transition"
                  >
-                   Trocar Loja
+                   Trocar
                  </button>
               )}
 
-              <button onClick={handleLogout} className="text-[#698F8A] hover:text-[#4A6B64] transition" title="Sair">
-                <LogOutIcon size={24} />
+              <button onClick={handleLogout} className="p-1.5 sm:p-2 text-[#698F8A] hover:text-[#4A6B64] transition" title="Sair">
+                <LogOutIcon size={20} className="sm:w-6 sm:h-6" />
               </button>
             </div>
           </div>
@@ -1460,7 +1465,7 @@ export default function App() {
       {currentScreen === 'orders' && renderOrders()}
       {currentScreen === 'admin' && renderAdmin()}
 
-      {/* Modal Flutuante */}
+      {/* Modal Flutuante para Detalhes do Produto */}
       {selectedProduct && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300">
           <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto md:overflow-hidden shadow-2xl relative animate-in fade-in zoom-in-95 duration-200 flex flex-col md:flex-row border border-[#8ECAC5]/10">
@@ -1471,11 +1476,11 @@ export default function App() {
               <CloseIcon size={20} />
             </button>
 
-            <div className="w-full md:w-1/2 h-64 md:h-auto bg-[#F4F9F8] relative">
+            <div className="w-full md:w-1/2 h-64 md:h-auto bg-white relative p-6 flex items-center justify-center">
               <img 
                 src={selectedProduct.image} 
                 alt={selectedProduct.name} 
-                className="w-full h-full object-cover"
+                className="max-h-full max-w-full object-contain mix-blend-multiply"
               />
               {selectedProduct.category && (
                 <span className="absolute top-4 left-4 bg-[#8ECAC5] text-white text-xs font-semibold px-3 py-1 rounded-full shadow-md">
@@ -1484,9 +1489,9 @@ export default function App() {
               )}
             </div>
 
-            <div className="p-6 md:p-8 flex-1 flex flex-col justify-between">
+            <div className="p-6 md:p-8 flex-1 flex flex-col justify-between bg-[#F4F9F8]/50">
               <div>
-                <h3 className="text-2xl font-bold text-[#4A6B64] mb-2 leading-tight">
+                <h3 className="text-xl sm:text-2xl font-bold text-[#4A6B64] mb-2 leading-tight">
                   {selectedProduct.name}
                 </h3>
                 <span className="inline-block bg-[#E8F3F2] text-[#4A6B64] text-xs font-bold px-3 py-1 rounded-full mb-4">
@@ -1507,10 +1512,10 @@ export default function App() {
                 </div>
 
                 <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center bg-[#F4F9F8] border border-[#E8F3F2] rounded-xl p-1 shadow-inner">
+                  <div className="flex items-center bg-white border border-[#E8F3F2] rounded-xl p-1 shadow-sm">
                     <button 
                       onClick={() => setModalQuantity(prev => Math.max(1, prev - 1))}
-                      className="p-2 text-[#4A6B64] hover:bg-white rounded-lg transition"
+                      className="p-2 text-[#4A6B64] hover:bg-[#F4F9F8] rounded-lg transition"
                     >
                       <MinusIcon size={16} />
                     </button>
@@ -1519,7 +1524,7 @@ export default function App() {
                     </span>
                     <button 
                       onClick={() => setModalQuantity(prev => Math.min(selectedProduct.stock || 999, prev + 1))}
-                      className="p-2 text-[#4A6B64] hover:bg-white rounded-lg transition"
+                      className="p-2 text-[#4A6B64] hover:bg-[#F4F9F8] rounded-lg transition"
                     >
                       <PlusIcon size={16} />
                     </button>
@@ -1530,10 +1535,10 @@ export default function App() {
                       addToCart(selectedProduct, modalQuantity);
                       setSelectedProduct(null);
                     }}
-                    className="flex-1 bg-[#4A6B64] hover:bg-[#3A5A53] text-white py-3 px-6 rounded-xl font-bold flex items-center justify-center gap-2 transition shadow-md active:scale-95"
+                    className="flex-1 bg-[#4A6B64] hover:bg-[#3A5A53] text-white py-3 px-4 sm:px-6 rounded-xl font-bold flex items-center justify-center gap-2 transition shadow-md active:scale-95 text-sm sm:text-base"
                   >
                     <ShoppingCartIcon size={18} />
-                    Adicionar ({modalQuantity})
+                    Adicionar
                   </button>
                 </div>
               </div>
