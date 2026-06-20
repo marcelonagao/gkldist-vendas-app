@@ -326,7 +326,6 @@ export default function App() {
     }
   }, [dbClients, currentUser]);
 
-  // NOVO: Busca Centralizada de Pedidos (Filtrada em memória de acordo com o perfil)
   useEffect(() => {
     if (!isFirebaseConfigured || !firebaseUser || !currentUser) return;
 
@@ -494,7 +493,6 @@ export default function App() {
       const targetClient = currentUser.isRep ? selectedClientForRep : currentUser;
       const targetClientId = targetClient?.id || firebaseUser.uid;
 
-      // NOVO: Pedidos são gravados numa coleção global para visão gerencial e de representante
       const orderPath = typeof __app_id !== 'undefined'
         ? collection(db, 'artifacts', appId, 'public', 'data', 'pedidos')
         : collection(db, 'pedidos');
@@ -530,7 +528,6 @@ export default function App() {
         ? doc(db, 'artifacts', appId, 'public', 'data', 'clientes', clientId)
         : doc(db, 'clientes', clientId);
 
-      // NOVO: Quando o gestor aprova, atribui automaticamente ao Carlos Vendedor (Simulação B2B)
       await updateDoc(clientDocRef, {
         status: 'aprovado',
         creditLimit: 5000.00,
@@ -683,9 +680,7 @@ export default function App() {
     </div>
   );
 
-  // NOVO: Painel do Representante com Abas (Clientes e Pedidos)
   const renderRepDashboard = () => {
-    // Carteira restrita ao vendedor logado (ou clientes sem vendedor para testes)
     const myClients = dbClients.filter(c => c.vendedorId === currentUser.id || !c.vendedorId);
     
     const filteredClients = myClients.filter(c => 
@@ -1220,7 +1215,6 @@ export default function App() {
     </div>
   );
 
-  // NOVO: Painel Administrativo do Gestor com Abas
   const renderAdmin = () => {
     const pendingClients = dbClients.filter(c => c.status === 'pendente');
     const approvedClients = dbClients.filter(c => c.status === 'aprovado' || c.creditLimit > 0);
@@ -1382,8 +1376,8 @@ export default function App() {
             }} style={{cursor: (currentUser.isAdmin || (currentUser.isRep && !selectedClientForRep)) ? 'default' : 'pointer'}}>
               <SparklesIcon size={24} className="text-[#8ECAC5]" />
               <div className="flex flex-col">
-                <span className="font-bold text-lg leading-tight hidden sm:block text-[#8ECAC5]">GKL BRASIL</span>
-                <span className="text-[10px] font-bold tracking-wider uppercase text-[#698F8A] leading-none hidden sm:block">
+                <span className="font-bold text-base sm:text-lg leading-tight text-[#8ECAC5]">GKL BRASIL</span>
+                <span className="text-[8px] sm:text-[10px] font-bold tracking-wider uppercase text-[#698F8A] leading-none">
                   {currentUser.isAdmin ? 'Painel Administrativo' : currentUser.isRep ? 'Portal do Representante' : 'Distribuidora'}
                 </span>
               </div>
